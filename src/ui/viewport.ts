@@ -190,6 +190,7 @@ function runTransition(
   viewport: HTMLElement,
   getState: () => ZoomTransitionState | null,
   target: ZoomLevel,
+  onSettled?: (level: ZoomLevel) => void,
 ): Observable<void> {
   return new Observable<void>((subscriber) => {
     const st = getState();
@@ -258,6 +259,9 @@ function runTransition(
         oldLayer?.remove();
         viewport.removeAttribute('data-transitioning');
         viewport.dataset.zoom = String(target);
+        // Transition has settled into its FINAL layer: let the owner (main.ts)
+        // (re)mount caret + focus-mask against the layer that actually remains.
+        onSettled?.(target);
         subscriber.complete();
       };
 
@@ -297,9 +301,10 @@ function runTransition(
 export function mountZoomTransitions(
   viewport: HTMLElement,
   getState: () => ZoomTransitionState | null,
+  onSettled?: (level: ZoomLevel) => void,
 ): () => void {
   const sub = selectZoom()
-    .pipe(switchMap((target) => runTransition(viewport, getState, target)))
+    .pipe(switchMap((target) => runTransition(viewport, getState, target, onSettled)))
     .subscribe();
   return () => sub.unsubscribe();
 }

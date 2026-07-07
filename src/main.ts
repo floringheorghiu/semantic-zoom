@@ -11,6 +11,7 @@ import type { LoadResultDTO } from './engine/engine-a';
 import { renderLevel, mountZoomTransitions, type ZoomTransitionState } from './ui/viewport';
 import { mountSlider } from './ui/slider';
 import { mountCaret } from './ui/caret';
+import { mountFocusMask } from './ui/focus-mask';
 
 // The store: main.ts is the only place (with state/) allowed to feed actions$.
 // Components dispatch + subscribe to selectors; only this file wires the bus.
@@ -33,6 +34,7 @@ let currentIndex: ResolvedIndex | null = null;
 let summariesAvailable = false;
 let sliderTeardown: (() => void) | null = null;
 let caretTeardown: (() => void) | null = null;
+let focusMaskTeardown: (() => void) | null = null;
 let zoomTeardown: (() => void) | null = null;
 
 let viewportEl: HTMLElement;
@@ -82,7 +84,22 @@ function renderCurrent(): void {
     renderLevel(viewportEl, currentTable, currentIndex, currentLevel);
   }
   remountCaret();
+  remountFocusMask();
   mountSliderForState();
+}
+
+/**
+ * (Re)mount the group focus-mask after a render. It only makes sense at k=0 for
+ * a native doc (where `.pgroup[data-sid]` groups exist and a caret can pick an
+ * active group); at other levels or for raw/untagged docs we tear down and skip.
+ * mountFocusMask subscribes to the store, so a teardown-then-mount is idempotent.
+ */
+function remountFocusMask(): void {
+  focusMaskTeardown?.();
+  focusMaskTeardown = null;
+  const nativeAtK0 = !!currentTable && currentLevel === 0;
+  if (!nativeAtK0) return;
+  focusMaskTeardown = mountFocusMask(viewportEl);
 }
 
 /**
@@ -106,7 +123,9 @@ function remountCaret(): void {
  * transition effect (spec §2.5) picks up via `switchMap`. `actions$.next` runs
  * the effect's frame n SYNCHRONOUSLY while `currentLevel` still holds the SOURCE
  * level (what `getZoomState` reports); we advance `currentLevel` to the target
- * only after, then remount caret + slider against the freshly-appended layer.
+ * only after and update the slider. Caret + focus-mask are (re)mounted by the
+ * transition's `onSettled` callback against the FINAL layer — remounting here
+ * would attach them to the still-transitioning (pre-settle) layer.
  */
 function requestLevel(level: ZoomLevel): void {
   if (!availableLevels().includes(level)) return;
@@ -114,7 +133,6 @@ function requestLevel(level: ZoomLevel): void {
   actions$.next(zoomSet(level)); // frame n mounts the entering layer synchronously
   currentLevel = level;
   viewportEl.dataset.zoom = String(level);
-  remountCaret();
   mountSliderForState();
 }
 
@@ -153,9 +171,11 @@ function applyResult(result: LoadResultDTO): void {
     layer.appendChild(pre);
     viewportEl.replaceChildren(layer);
     viewportEl.dataset.zoom = '0';
-    // Raw view has no `.pnode`s — no caret target.
+    // Raw view has no `.pnode`s or `.pgroup`s — no caret or focus-mask target.
     caretTeardown?.();
     caretTeardown = null;
+    focusMaskTeardown?.();
+    focusMaskTeardown = null;
 
     statusEl.textContent =
       result.kind === 'corrupt' ? `Corrupt: ${result.error}` : 'Untagged';
@@ -336,10 +356,20 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Mount the two-frame zoom-transition effect once (spec §2.5). Subsequent
   // ZOOM_SET actions drive crossfades; the first render on open stays direct.
-  zoomTeardown = mountZoomTransitions(viewportEl, getZoomState);
+  // After a transition settles into its FINAL layer, (re)mount the caret and
+  // focus-mask against the layer that actually remains (fixes them otherwise
+  // attaching to the pre-transition layer).
+  zoomTeardown = mountZoomTransitions(viewportEl, getZoomState, () => {
+    remountCaret();
+    remountFocusMask();
+  });
   window.addEventListener('beforeunload', () => {
     zoomTeardown?.();
     zoomTeardown = null;
+    caretTeardown?.();
+    caretTeardown = null;
+    focusMaskTeardown?.();
+    focusMaskTeardown = null;
   });
 
   void installMenu();
