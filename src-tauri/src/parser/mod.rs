@@ -45,6 +45,9 @@ pub struct Order {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LookupTable {
     pub version: u8,
+    // Contract fix: fixture/JSON-Schema(§2.4)/TS(§2.2) all use camelCase "docHash";
+    // §2.3 wrote `doc_hash` with no rename, which fails serde on the real payload.
+    #[serde(rename = "docHash")]
     pub doc_hash: String,
     pub meta: HashMap<String, MetaNode>,
     pub sections: HashMap<String, SectionNode>,

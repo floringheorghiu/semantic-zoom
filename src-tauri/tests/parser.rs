@@ -3,7 +3,7 @@ use semantic_zoom_lib::parser::LookupTable;
 #[test]
 fn validate_rejects_dangling_parent() {
     let json = r#"{
-      "version":1,"doc_hash":"aaaa","meta":{},
+      "version":1,"docHash":"aaaa","meta":{},
       "sections":{},
       "paragraphs":{"P-00000000-0":{"id":"P-00000000-0","level":0,"parent":"S-nope-0","kind":"prose","span":{"start":0,"end":3},"html":"x"}},
       "order":{"meta":[],"sections":[],"paragraphs":["P-00000000-0"]}
@@ -16,7 +16,7 @@ fn validate_rejects_dangling_parent() {
 fn verify_ids_rejects_wrong_hash() {
     let src = "hello world paragraph one";
     let json = r#"{
-      "version":1,"doc_hash":"aaaa",
+      "version":1,"docHash":"aaaa",
       "meta":{"M1":{"id":"M1","level":-2,"children":["S-00000000-0"],"title":"m","body":"b"}},
       "sections":{"S-00000000-0":{"id":"S-00000000-0","level":-1,"parent":"M1","children":["P-deadbeef-0"],"title":"s","body":"b"}},
       "paragraphs":{"P-deadbeef-0":{"id":"P-deadbeef-0","level":0,"parent":"S-00000000-0","kind":"prose","span":{"start":0,"end":5},"html":"x"}},
