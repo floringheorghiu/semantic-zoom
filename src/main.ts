@@ -18,6 +18,7 @@ import {
 import { mountSlider } from './ui/slider';
 import { mountCaret } from './ui/caret';
 import { mountFocusMask } from './ui/focus-mask';
+import { mountStatusBadge, type StatusBadgeHandle } from './ui/status-badge';
 import { reconcile, restoreCaret, groupKey } from './state/reload';
 
 // The store: main.ts is the only place (with state/) allowed to feed actions$.
@@ -47,6 +48,8 @@ let sliderTeardown: (() => void) | null = null;
 let caretTeardown: (() => void) | null = null;
 let focusMaskTeardown: (() => void) | null = null;
 let zoomTeardown: (() => void) | null = null;
+/** Non-modal status affordance (spec §2.6, §5.3): warning badge + "Updated" pill. */
+let statusBadge: StatusBadgeHandle | null = null;
 
 let viewportEl: HTMLElement;
 let sliderEl: HTMLElement;
@@ -200,6 +203,7 @@ function applyResult(result: LoadResultDTO): void {
     currentTable = result.table;
     currentIndex = buildIndex(result.table);
     statusEl.textContent = 'Native';
+    statusBadge?.setStatus('native');
     renderCurrent();
   } else {
     // Untagged / Corrupt: no summaries exist. Show raw at k=0 and disable
@@ -223,6 +227,11 @@ function applyResult(result: LoadResultDTO): void {
 
     statusEl.textContent =
       result.kind === 'corrupt' ? `Corrupt: ${result.error}` : 'Untagged';
+    if (result.kind === 'corrupt') {
+      statusBadge?.setStatus('corrupt', result.error);
+    } else {
+      statusBadge?.setStatus('untagged');
+    }
     mountSliderForState();
   }
 }
@@ -399,6 +408,11 @@ window.addEventListener('DOMContentLoaded', () => {
 
   document.querySelector('#open-file')?.addEventListener('click', () => void promptOpen());
 
+  // Mount the non-modal status affordance once, into the toolbar. It is driven
+  // imperatively (main.ts holds the load result + its corrupt error text).
+  const toolbar = document.querySelector<HTMLElement>('.toolbar') ?? document.body;
+  statusBadge = mountStatusBadge(toolbar);
+
   // Mount the two-frame zoom-transition effect once (spec §2.5). Subsequent
   // ZOOM_SET actions drive crossfades; the first render on open stays direct.
   // After a transition settles into its FINAL layer, (re)mount the caret and
@@ -415,6 +429,8 @@ window.addEventListener('DOMContentLoaded', () => {
     caretTeardown = null;
     focusMaskTeardown?.();
     focusMaskTeardown = null;
+    statusBadge?.teardown();
+    statusBadge = null;
   });
 
   void installMenu();
@@ -475,6 +491,7 @@ async function handleDocChanged(): Promise<void> {
     currentTable = newResult.table;
     currentIndex = buildIndex(newResult.table);
     statusEl.textContent = 'Native';
+    statusBadge?.setStatus('native');
 
     if (wasNativeK0 && currentLevel === 0) {
       // (§5.3 step 4) Keyed reconciliation of the LIVE k=0 reading column.
@@ -529,8 +546,16 @@ async function handleDocChanged(): Promise<void> {
     focusMaskTeardown = null;
     statusEl.textContent =
       newResult.kind === 'corrupt' ? `Corrupt: ${newResult.error}` : 'Untagged';
+    if (newResult.kind === 'corrupt') {
+      statusBadge?.setStatus('corrupt', newResult.error);
+    } else {
+      statusBadge?.setStatus('untagged');
+    }
     mountSliderForState();
   }
 
-  // TODO(Task 3.3): updated pill (1.5s non-modal "Updated" corner feedback).
+  // (§5.3 step 6) A real (non-silent) reload was applied → the ONLY permitted
+  // feedback: a 1.5s non-modal "Updated" pill. The identical-docHash silent
+  // path returned early above and shows NOTHING.
+  statusBadge?.flashUpdated('Updated');
 }
