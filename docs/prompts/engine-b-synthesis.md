@@ -28,6 +28,11 @@ derivation (`S-` hash, `M1` positional id, `parent` links, `docHash`,
 2. **Hash** each span (SHA-256, first 8 hex chars) and assign
    `P-<hash8>-<ordinal>` per D6.
 3. **Call the LLM** with the prompt below, feeding it the ordered `P` index.
+   Build each entry's `text` from the node's raw span; truncate any single
+   node longer than 40 lines to its first 30 lines plus a final line
+   `...(N lines omitted)` — enough for the model to describe the block
+   without blowing the context window. Use the invocation settings in
+   §"Invocation settings".
 4. **Validate the LLM's output mechanically** (§"Output contract" below) —
    reject and retry with a corrective message if any check fails.
 5. **Assemble** the full `LookupTable`: derive each section's id as
@@ -42,6 +47,25 @@ derivation (`S-` hash, `M1` positional id, `parent` links, `docHash`,
 Everything above except step 3 is ordinary deterministic code — none of it
 belongs in the prompt, and none of it should ever be delegated back to the
 model "just this once."
+
+## Invocation settings
+
+Grouping stability is not cosmetic: `S-` ids derive from each section's
+first child, so a different grouping of identical input produces different
+`S-` ids, which defeats the keyed hot-reload reconciliation (D7) for the
+whole document. Every knob here exists to make identical input produce
+identical grouping:
+
+- **temperature 0** (greedy decoding); leave top-p/top-k at defaults.
+- **Structured output / JSON mode** if the runtime supports it (Ollama:
+  `"format": "json"`); the "Output ONLY the JSON object" instruction is the
+  fallback, not the mechanism.
+- Model per D3: quantized **Gemma 3 4B or Qwen3 4B** via Ollama
+  (`http://localhost:11434/api/generate`). Record the exact model tag used
+  alongside any payload produced during development.
+- Max output tokens: budget ~120 tokens per expected section plus ~300 for
+  the meta node; a truncated JSON object fails the output contract and
+  wastes a retry.
 
 ---
 
@@ -75,9 +99,11 @@ HARD RULES:
 - Do not emit `id`, `level`, `parent`, `docHash`, or `order` fields anywhere.
   A separate deterministic step derives those; anything you put there is
   ignored or causes a validation failure.
-- Do not use the literal three-character sequence `-->` in any string value
-  (the payload this feeds is embedded in an HTML comment; write `-->`
-  if you must reference one).
+- Do not use the literal three-character sequence "minus minus greater-than"
+  (an HTML comment closer) in any string value — the payload this feeds is
+  embedded inside an HTML comment. If you must reference it, describe it in
+  words ("the comment-closing arrow"). Output containing the raw sequence is
+  rejected.
 - Output ONLY the JSON object described below. No prose before or after, no
   markdown code fence around it.
 
@@ -93,14 +119,28 @@ Each entry is `{ "id": string, "kind": "prose"|"code"|"list"|"table"|
 this does not change how you must treat the id).
 
 TASK:
-1. Partition the paragraph index into an ordered sequence of sections.
-   Anchor section boundaries on headings where present: typically one
-   section per heading at the document's primary level, occasionally
-   splitting one heading's content into two sections if it clearly covers
-   two separable topics, or merging a very short heading into its neighbor
-   if it has no substantive content of its own (e.g. a bare `---` or an
-   empty subheading should never become its own section). Every section
-   needs at least one paragraph.
+1. Partition the paragraph index into an ordered sequence of sections,
+   applying these rules in order:
+   a. Determine the boundary heading depth: the shallowest heading depth
+      (fewest '#') that occurs two or more times in the input. If no depth
+      occurs twice, use the shallowest depth present. If the input contains
+      no headings at all, skip to rule (e).
+   b. Start a new section at every heading of exactly that depth. The
+      boundary heading is the FIRST child of the section it opens. Deeper
+      headings do not start sections; they stay inside the current one.
+   c. Paragraphs before the first boundary heading form their own leading
+      section (title it from what that preamble says, e.g. the document's
+      purpose statement).
+   d. Merge exception — apply only when unambiguous: if a boundary heading's
+      section would contain nothing but the heading itself (no content
+      before the next boundary), merge it into the FOLLOWING section
+      instead of emitting an empty-feeling one. If it is the LAST boundary
+      heading in the document (nothing follows it), merge it into the
+      PRECEDING section instead.
+   e. No-headings fallback: group consecutive paragraphs by topic into
+      sections of roughly 3–10 paragraphs each, starting a new section
+      where the subject clearly shifts.
+   Every section must contain at least one paragraph.
 
 2. For each section write:
    - "title": ≤8 words, plain English, no jargon, no code syntax. Someone
@@ -174,6 +214,12 @@ Expected output:
 - No string value anywhere contains the literal substring `-->`.
 - No `id`, `level`, `parent`, `docHash`, or `order` key present anywhere in
   the parsed object.
+
+Independently of the check above, the payload serializer must still apply
+A3 escaping (the comment-closer sequence becomes dash dash backslash-u-0-0-3-e,
+i.e. the JSON unicode escape for `>`, in the serialized payload) to every
+string in the final payload — section bodies are only one of the strings
+that end up inside the HTML comment.
 
 On any failure: re-prompt once with the specific violation named (e.g. "id
 P-7788990a-0 is missing from all sections — add it to the correct section

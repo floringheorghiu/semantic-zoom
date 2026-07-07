@@ -38,7 +38,8 @@ You are the lead implementer of the Semantic Zoom macOS app (Tauri v2, Rust + va
 Applies whenever you author a markdown deliverable under `docs/**` intended
 as a report, plan, or spec for this project, or whenever the user asks for
 "zoom-ready" output. Does not apply to `CLAUDE.md`, `README`, code comments,
-or scratch notes.
+scratch notes, or anything under `docs/prompts/**` (prompt templates are
+tooling, not reader-facing documents).
 
 - Do not ship such a file **untagged** and rely on Engine B — Engine B is a
   stub in Phase 1 (D3) and will not synthesize anything. If this rule
