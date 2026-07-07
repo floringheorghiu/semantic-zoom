@@ -4,6 +4,9 @@ export interface SliderOptions {
   onChange: (level: ZoomLevel) => void;
   /** Levels whose summaries are unavailable (Engine B not yet run). */
   disabledLevels?: ZoomLevel[];
+  /** The currently-active level, marked `data-active` so menu/keyboard
+      zoom changes stay reflected in the slider. */
+  active?: ZoomLevel;
 }
 
 /** Detents, top-to-bottom: raw (0), section (−1), meta (−2). */
@@ -33,6 +36,11 @@ export function mountSlider(el: HTMLElement, opts: SliderOptions): () => void {
     detent.className = 'detent';
     detent.dataset.detent = String(level);
     detent.textContent = DETENT_LABEL[level];
+
+    if (opts.active === level) {
+      detent.setAttribute('data-active', '');
+      detent.setAttribute('aria-pressed', 'true');
+    }
 
     if (disabled.has(level)) {
       detent.setAttribute('data-disabled', '');

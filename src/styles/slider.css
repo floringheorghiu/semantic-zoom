@@ -21,6 +21,11 @@
   background: rgba(128, 128, 128, 0.18);
 }
 
+.zoom-slider .detent[data-active] {
+  background: rgba(128, 128, 128, 0.28);
+  font-weight: 600;
+}
+
 .zoom-slider .detent[data-disabled] {
   opacity: 0.4;
   cursor: not-allowed;

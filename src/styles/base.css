@@ -24,14 +24,24 @@ body {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.5rem 0.75rem;
+  /* Left inset clears the macOS overlay traffic lights (titleBarStyle
+     "Overlay" draws them over content). Without it the first control sits
+     under the window buttons and is unclickable. */
+  padding: 0.5rem 0.75rem 0.5rem 82px;
+  min-height: 44px;
   border-bottom: 1px solid rgba(128, 128, 128, 0.25);
   flex: 0 0 auto;
+  /* The bar carries data-tauri-drag-region so the window can be dragged by
+     it; Tauri excludes interactive child controls automatically (it checks
+     the event target for the attribute). */
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .toolbar .status {
   font-size: 0.85rem;
   opacity: 0.7;
+  margin-left: auto;
 }
 
 /* The viewport fills the remaining window and owns scroll. .level-layer is
