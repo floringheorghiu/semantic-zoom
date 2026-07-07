@@ -8,10 +8,17 @@ import { Menu, Submenu, MenuItem, PredefinedMenuItem } from '@tauri-apps/api/men
 
 import { buildIndex, type ZoomLevel, type LookupTable, type ResolvedIndex } from './engine/schema';
 import type { LoadResultDTO } from './engine/engine-a';
-import { renderLevel, mountZoomTransitions, type ZoomTransitionState } from './ui/viewport';
+import {
+  renderLevel,
+  buildGroup,
+  mountZoomTransitions,
+  scrollCommands$,
+  type ZoomTransitionState,
+} from './ui/viewport';
 import { mountSlider } from './ui/slider';
 import { mountCaret } from './ui/caret';
 import { mountFocusMask } from './ui/focus-mask';
+import { reconcile, restoreCaret, groupKey } from './state/reload';
 
 // The store: main.ts is the only place (with state/) allowed to feed actions$.
 // Components dispatch + subscribe to selectors; only this file wires the bus.
@@ -30,6 +37,10 @@ let currentLevel: ZoomLevel = 0;
 let currentResult: LoadResultDTO | null = null;
 let currentTable: LookupTable | null = null;
 let currentIndex: ResolvedIndex | null = null;
+/** The file currently open — re-invoked on `doc://changed` (silent reload, §5.3). */
+let currentPath: string | null = null;
+/** k=0 groups from the last render, keyed by sid, for keyed reconciliation (D7). */
+let prevGroups = new Map<string, HTMLElement>();
 /** True only when Engine-A summaries exist (native docs). Gates −1/−2. */
 let summariesAvailable = false;
 let sliderTeardown: (() => void) | null = null;
@@ -83,9 +94,42 @@ function renderCurrent(): void {
     // TODO(Task 2.4): migrate to full store-driven rendering (zoom transition).
     renderLevel(viewportEl, currentTable, currentIndex, currentLevel);
   }
+  // Seed the keyed-reconciliation map from the freshly rendered k=0 groups so
+  // the FIRST hot reload can already reuse unchanged DOM nodes (D7). The
+  // reconciler compares `dataset.key`, so stamp it here to match `groupKey`.
+  prevGroups = seedGroups();
   remountCaret();
   remountFocusMask();
   mountSliderForState();
+}
+
+/**
+ * Read the mounted k=0 `.pgroup[data-sid]` nodes into a `Map<sid, node>`,
+ * stamping each with its `groupKey` so the next `reconcile` can compare bytes.
+ * Empty for non-native docs or non-k=0 levels (no groups to reuse).
+ */
+function seedGroups(): Map<string, HTMLElement> {
+  const map = new Map<string, HTMLElement>();
+  if (!currentTable || currentLevel !== 0) return map;
+  const column = viewportEl.querySelector<HTMLElement>('.reading-column');
+  if (!column) return map;
+  for (const sid of currentTable.order.sections) {
+    const node = column.querySelector<HTMLElement>(`.pgroup[data-sid="${sid}"]`);
+    if (!node) continue;
+    node.dataset.key = groupKey(currentTable, sid);
+    map.set(sid, node);
+  }
+  return map;
+}
+
+/** Move the read-only caret marker onto `pid` (used after hot-reload restore). */
+function markCaret(pid: string): void {
+  for (const el of viewportEl.querySelectorAll('.pnode[data-caret]')) {
+    el.removeAttribute('data-caret');
+  }
+  viewportEl
+    .querySelector<HTMLElement>(`.pnode[data-pid="${pid}"]`)
+    ?.setAttribute('data-caret', '');
 }
 
 /**
@@ -184,6 +228,7 @@ function applyResult(result: LoadResultDTO): void {
 }
 
 export async function openFile(path: string): Promise<void> {
+  currentPath = path; // remembered so `doc://changed` can silently reload it (§5.3)
   const result = await invoke<LoadResultDTO>('load_document', { path });
   // Feed the store so it holds doc/index/raw (caret→activeGroupHead recompute,
   // Task 2.5). Direct render below stays until full store-driven rendering
@@ -376,9 +421,116 @@ window.addEventListener('DOMContentLoaded', () => {
   installKeyboardShortcuts();
   installDevHud();
 
-  // The watcher fires this on disk change. Silent hot-reload lands in Task 3.2;
-  // for now, re-render the current document.
+  // The watcher fires this on disk change → silent hot-reload (spec §5.3).
   void listen('doc://changed', () => {
-    if (currentResult) renderCurrent();
+    void handleDocChanged();
   });
 });
+
+/**
+ * The silent hot-reload contract (spec §5.3), driven by `doc://changed`:
+ *  1. re-`invoke('load_document')` for the tracked path;
+ *  2. same `docHash` (both native) → drop silently, no UI change at all;
+ *  3. else one `DOC_LOADED` store emission;
+ *  4. keyed per-group reconciliation at k=0 (D7 — unchanged groups keep DOM
+ *     identity; NEVER a container wipe); a plain re-render at −1/−2;
+ *  5. tiered caret restoration; null → clear caret + preserve scroll by ratio;
+ *  6. NO modal, NO diff view.
+ */
+async function handleDocChanged(): Promise<void> {
+  if (currentPath === null) return;
+
+  let newResult: LoadResultDTO;
+  try {
+    newResult = await invoke<LoadResultDTO>('load_document', { path: currentPath });
+  } catch (err) {
+    console.warn('reload: load_document failed; keeping current view:', err);
+    return;
+  }
+
+  // (§5.3 step 2) Identical content on both sides → drop silently.
+  if (
+    currentResult?.kind === 'native' &&
+    newResult.kind === 'native' &&
+    currentTable !== null &&
+    newResult.table.docHash === currentTable.docHash
+  ) {
+    return;
+  }
+
+  // Capture the OLD state before the store swap so caret restoration can diff.
+  const oldTable = currentTable;
+  const oldCaret = snapshot().caret;
+  const wasNativeK0 = currentResult?.kind === 'native' && currentLevel === 0;
+  const oldLayer = viewportEl.querySelector<HTMLElement>('.level-layer');
+  const scrollRatio =
+    oldLayer && oldLayer.scrollHeight > 0 ? oldLayer.scrollTop / oldLayer.scrollHeight : 0;
+
+  // (§5.3 step 3) One store emission ⇒ one render pass.
+  actions$.next(docLoaded(newResult));
+  currentResult = newResult;
+
+  if (newResult.kind === 'native') {
+    summariesAvailable = true;
+    currentTable = newResult.table;
+    currentIndex = buildIndex(newResult.table);
+    statusEl.textContent = 'Native';
+
+    if (wasNativeK0 && currentLevel === 0) {
+      // (§5.3 step 4) Keyed reconciliation of the LIVE k=0 reading column.
+      const column = viewportEl.querySelector<HTMLElement>('.reading-column');
+      if (column) {
+        const table = newResult.table;
+        const index = currentIndex;
+        prevGroups = reconcile(column, table, index, prevGroups, (sid) =>
+          buildGroup(table, index, sid),
+        );
+        remountCaret();
+        remountFocusMask();
+        mountSliderForState();
+      } else {
+        renderCurrent();
+      }
+    } else {
+      // At −1/−2 a plain re-render is cheap and correct (no k=0 groups mounted).
+      renderCurrent();
+    }
+
+    // (§5.3 step 5) Tiered caret restoration.
+    if (oldTable) {
+      const restored = restoreCaret(oldCaret, oldTable, newResult.table);
+      if (restored) {
+        markCaret(restored.paragraphId);
+        actions$.next(caretPlaced(restored.paragraphId, restored.offset));
+      } else if (currentLevel === 0) {
+        // Caret cleared (already reset by DOC_LOADED) → preserve scroll by ratio.
+        const layer = viewportEl.querySelector<HTMLElement>('.level-layer');
+        if (layer) scrollCommands$.next({ el: layer, top: scrollRatio * layer.scrollHeight });
+      }
+    }
+  } else {
+    // Untagged / Corrupt: fall back to the raw k=0 view.
+    summariesAvailable = false;
+    currentTable = null;
+    currentIndex = null;
+    currentLevel = 0;
+    prevGroups = new Map();
+
+    const layer = document.createElement('div');
+    layer.className = 'level-layer';
+    const pre = document.createElement('pre');
+    pre.textContent = newResult.raw;
+    layer.appendChild(pre);
+    viewportEl.replaceChildren(layer);
+    viewportEl.dataset.zoom = '0';
+    caretTeardown?.();
+    caretTeardown = null;
+    focusMaskTeardown?.();
+    focusMaskTeardown = null;
+    statusEl.textContent =
+      newResult.kind === 'corrupt' ? `Corrupt: ${newResult.error}` : 'Untagged';
+    mountSliderForState();
+  }
+
+  // TODO(Task 3.3): updated pill (1.5s non-modal "Updated" corner feedback).
+}

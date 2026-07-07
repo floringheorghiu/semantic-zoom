@@ -56,30 +56,8 @@ export function buildLevel(
 
   if (level === 0) {
     for (const sid of table.order.sections) {
-      const section = table.sections[sid];
-      if (!section) continue;
-      const group = document.createElement('section');
-      group.className = 'pgroup';
-      group.dataset.sid = sid;
-      for (const pid of section.children) {
-        const paragraph = table.paragraphs[pid];
-        if (!paragraph) continue;
-        const node = document.createElement('div');
-        node.className = 'pnode';
-        node.dataset.pid = pid;
-        node.dataset.kind = paragraph.kind;
-        node.innerHTML = paragraph.html;
-        // Let wide tables scroll inside the reading column instead of
-        // blowing it out horizontally (Ask 4).
-        for (const tbl of node.querySelectorAll('table')) {
-          const scroll = document.createElement('div');
-          scroll.className = 'table-scroll';
-          tbl.replaceWith(scroll);
-          scroll.appendChild(tbl);
-        }
-        group.appendChild(node);
-      }
-      column.appendChild(group);
+      if (!table.sections[sid]) continue;
+      column.appendChild(buildGroup(table, _index, sid));
     }
   } else if (level === -1) {
     for (const sid of table.order.sections) {
@@ -113,6 +91,40 @@ export function buildLevel(
   }
 
   return layer;
+}
+
+/**
+ * Build ONE level-0 `.pgroup[data-sid]` group (its `.pnode` paragraphs + table
+ * scroll-wraps) WITHOUT mounting it. Factored out of `buildLevel` so the keyed
+ * hot-reload reconciler (Task 3.2, `reconcile` in state/reload.ts) can rebuild a
+ * single changed group without re-implementing paragraph rendering — one source
+ * of truth for what a group's DOM looks like.
+ */
+export function buildGroup(table: LookupTable, _index: ResolvedIndex, sid: string): HTMLElement {
+  const group = document.createElement('section');
+  group.className = 'pgroup';
+  group.dataset.sid = sid;
+  const section = table.sections[sid];
+  if (!section) return group;
+  for (const pid of section.children) {
+    const paragraph = table.paragraphs[pid];
+    if (!paragraph) continue;
+    const node = document.createElement('div');
+    node.className = 'pnode';
+    node.dataset.pid = pid;
+    node.dataset.kind = paragraph.kind;
+    node.innerHTML = paragraph.html;
+    // Let wide tables scroll inside the reading column instead of
+    // blowing it out horizontally (Ask 4).
+    for (const tbl of node.querySelectorAll('table')) {
+      const scroll = document.createElement('div');
+      scroll.className = 'table-scroll';
+      tbl.replaceWith(scroll);
+      scroll.appendChild(tbl);
+    }
+    group.appendChild(node);
+  }
+  return group;
 }
 
 // --- Zoom transition: two-frame layer crossfade (§2.5, D8) ------------------
