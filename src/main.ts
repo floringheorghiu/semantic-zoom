@@ -368,6 +368,11 @@ async function installMenu(): Promise<void> {
   await menu.setAsAppMenu();
 }
 
+function inEditable(t: EventTarget | null): boolean {
+  const el = t as HTMLElement | null;
+  return !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+}
+
 /**
  * Plain-key shortcuts (no modifier) as quick conveniences alongside the menu
  * accelerators: 1/2/3 jump to a level, [ / ] step zoom. Ignored while a text
@@ -376,8 +381,7 @@ async function installMenu(): Promise<void> {
 function installKeyboardShortcuts(): void {
   window.addEventListener('keydown', (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
-    const t = e.target as HTMLElement | null;
-    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    if (inEditable(e.target)) return;
 
     switch (e.key) {
       case '1': requestLevel(0); break;
@@ -388,6 +392,20 @@ function installKeyboardShortcuts(): void {
       default: return;
     }
     e.preventDefault();
+  });
+
+  // Content-scale zoom-IN via the physical =/+ key. The View-menu accelerator
+  // `CmdOrCtrl+Plus` only matches the SHIFTED '+' (⌘⇧=), so the unshifted ⌘=
+  // never reaches it — handle it here. macOS consumes ⌘⇧= at the menu before
+  // keydown, so there is no double-fire. (⌘- and ⌘0 work via their menu
+  // accelerators, which match the unshifted keys directly.)
+  window.addEventListener('keydown', (e) => {
+    if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+    if (inEditable(e.target)) return;
+    if (e.key === '=' || e.key === '+') {
+      scaleContent(1);
+      e.preventDefault();
+    }
   });
 }
 
