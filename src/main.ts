@@ -17,6 +17,7 @@ import {
 } from './ui/viewport';
 import { mountSlider } from './ui/slider';
 import { mountCaret } from './ui/caret';
+import { nextScale, SCALE_DEFAULT } from './ui/content-scale';
 import { mountFocusMask } from './ui/focus-mask';
 import { mountStatusBadge, type StatusBadgeHandle } from './ui/status-badge';
 import { reconcile, restoreCaret, groupKey } from './state/reload';
@@ -189,6 +190,28 @@ function stepZoom(dir: 1 | -1): void {
   requestLevel(target);
 }
 
+// --- Content scale (⌘= / ⌘- / ⌘0): browser-style zoom of the reading content,
+// independent of the semantic zoom LEVELS. Applied as a CSS `zoom` via the
+// --content-scale custom property on #viewport, so it persists across level
+// re-renders and transition layer swaps automatically.
+let contentScale = SCALE_DEFAULT;
+
+function applyContentScale(): void {
+  viewportEl.style.setProperty('--content-scale', String(contentScale));
+}
+
+/** Scale the content larger (+1) or smaller (−1). */
+function scaleContent(dir: 1 | -1): void {
+  contentScale = nextScale(contentScale, dir);
+  applyContentScale();
+}
+
+/** Reset content scale to 100% (⌘0 / "Actual Size"). */
+function resetContentScale(): void {
+  contentScale = SCALE_DEFAULT;
+  applyContentScale();
+}
+
 /** Apply a freshly loaded document. Resets to the raw level. */
 function applyResult(result: LoadResultDTO): void {
   currentResult = result;
@@ -324,8 +347,11 @@ async function installMenu(): Promise<void> {
       await MenuItem.new({ id: 'lvl-sections', text: 'Sections', accelerator: 'CmdOrCtrl+2', action: () => requestLevel(-1) }),
       await MenuItem.new({ id: 'lvl-story', text: 'Story', accelerator: 'CmdOrCtrl+3', action: () => requestLevel(-2) }),
       await sep(),
-      await MenuItem.new({ id: 'zoom-in', text: 'Zoom In', accelerator: 'CmdOrCtrl+Plus', action: () => stepZoom(1) }),
-      await MenuItem.new({ id: 'zoom-out', text: 'Zoom Out', accelerator: 'CmdOrCtrl+-', action: () => stepZoom(-1) }),
+      // Content scale (browser-style). ⌘+ is the macOS-standard zoom-in
+      // accelerator and fires on the unshifted ⌘= key too.
+      await MenuItem.new({ id: 'scale-in', text: 'Zoom In', accelerator: 'CmdOrCtrl+Plus', action: () => scaleContent(1) }),
+      await MenuItem.new({ id: 'scale-out', text: 'Zoom Out', accelerator: 'CmdOrCtrl+-', action: () => scaleContent(-1) }),
+      await MenuItem.new({ id: 'scale-reset', text: 'Actual Size', accelerator: 'CmdOrCtrl+0', action: () => resetContentScale() }),
     ],
   });
 
@@ -407,6 +433,8 @@ window.addEventListener('DOMContentLoaded', () => {
   statusEl = document.querySelector<HTMLElement>('#status')!;
 
   document.querySelector('#open-file')?.addEventListener('click', () => void promptOpen());
+
+  applyContentScale(); // seed --content-scale at 100%
 
   // Mount the non-modal status affordance once, into the toolbar. It is driven
   // imperatively (main.ts holds the load result + its corrupt error text).

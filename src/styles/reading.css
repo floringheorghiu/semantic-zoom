@@ -4,6 +4,16 @@
 
 /* ---------- Reading column (Ask 2): a centered, capped measure ---------- */
 
+/* Content scale (⌘= / ⌘- / ⌘0): browser-style zoom of the reading content only
+   — chrome (toolbar, traffic-light inset) is unaffected. `zoom` reflows, so the
+   column grows and the layer scrolls; offset-based anchor math stays consistent
+   since it's all in the same scaled space. The var lives on #viewport so it
+   cascades to both the current and the entering transition layers. */
+.reading-column,
+.level-layer > pre {
+  zoom: var(--content-scale, 1);
+}
+
 .reading-column {
   width: 100%;
   max-width: 46rem;          /* ~736px — a comfortable prose measure */
