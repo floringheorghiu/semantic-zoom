@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { test, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 // Schema declares "$schema": draft 2020-12, which the default `ajv` build's

@@ -1,0 +1,66 @@
+/* ---------- Focus masking: the spotlight ---------- */
+
+.pgroup {
+  opacity: 1;
+  /* ONLY opacity transitions. It is compositor-driven in WebKit:
+     no layout, no paint, runs off the main thread. */
+  transition: opacity 200ms linear;
+}
+
+/* Promote to its own layer ONLY while a transition can occur.
+   Applied via [data-transitioning] on #viewport during the 200ms window,
+   removed on transitionend — permanent will-change wastes VRAM on long docs. */
+#viewport[data-transitioning] .pgroup {
+  will-change: opacity;
+}
+
+/* Layout containment (D8): permits WebKit to skip layout/paint of
+   far-off-screen groups. This is what makes the two-frame zoom mount
+   (§2.5) and keyed hot-reload (§5.3) cheap on 10k-paragraph documents. */
+.pgroup {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 480px;  /* placeholder; browser corrects after first render */
+}
+
+.pgroup[data-dimmed] {
+  opacity: 0.35;
+  /* Contrast/saturation is an INSTANT class swap, not a transition (D1).
+     The 200ms opacity crossfade perceptually masks the step change.
+     Transitioning filter would repaint every frame — visible jank on
+     documents with many highlighted code blocks. */
+  filter: contrast(0.8) saturate(0.55);
+}
+
+/* Cheaper alternative for syntax colors: token remap via custom properties.
+   If profiling shows filter cost on very large docs, drop `filter` from
+   .pgroup[data-dimmed] and rely on this block alone. */
+.pgroup[data-dimmed] {
+  --tok-keyword:  var(--dim-fg);
+  --tok-string:   var(--dim-fg);
+  --tok-function: var(--dim-fg);
+  --tok-comment:  var(--dim-fg-faint);
+  --tok-number:   var(--dim-fg);
+}
+
+/* ---------- Level crossfade (zoom transitions, §2.5) ---------- */
+
+.level-layer {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  opacity: 1;
+  transition: opacity 200ms linear;
+}
+.level-layer[data-entering] { opacity: 0; }   /* mounted hidden, then flipped */
+.level-layer[data-leaving]  { opacity: 0; }
+
+/* ---------- Tokens ---------- */
+:root {
+  --dim-fg: #8a8f98;
+  --dim-fg-faint: #a6abb3;
+  color-scheme: light dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pgroup, .level-layer { transition: none; }
+}

@@ -1,3 +1,7 @@
+// @vitest-environment node
+// Reads fixtures via `new URL(..., import.meta.url)`, which needs a file:
+// scheme — jsdom's http import.meta.url would break it. Node env is correct
+// for these fs-backed tests; UI tests declare jsdom in vitest.config.ts.
 import { test, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { buildIndex, type LookupTable } from './schema';

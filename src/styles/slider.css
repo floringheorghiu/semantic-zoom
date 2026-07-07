@@ -1,0 +1,27 @@
+.zoom-slider {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  border-radius: 8px;
+}
+
+.zoom-slider .detent {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0.25rem 0.6rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.zoom-slider .detent:hover:not([data-disabled]) {
+  background: rgba(128, 128, 128, 0.18);
+}
+
+.zoom-slider .detent[data-disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
