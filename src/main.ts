@@ -10,6 +10,14 @@ import { buildIndex, type ZoomLevel, type LookupTable, type ResolvedIndex } from
 import type { LoadResultDTO } from './engine/engine-a';
 import { renderLevel } from './ui/viewport';
 import { mountSlider } from './ui/slider';
+import { mountCaret } from './ui/caret';
+
+// The store: main.ts is the only place (with state/) allowed to feed actions$.
+// Components dispatch + subscribe to selectors; only this file wires the bus.
+import { actions$ } from './state/store';
+import { caretPlaced, docLoaded } from './state/actions';
+import { selectCaret } from './state/selectors';
+import type { Subscription } from 'rxjs';
 
 import './styles/base.css';
 import './styles/slider.css';
@@ -24,6 +32,7 @@ let currentIndex: ResolvedIndex | null = null;
 /** True only when Engine-A summaries exist (native docs). Gates −1/−2. */
 let summariesAvailable = false;
 let sliderTeardown: (() => void) | null = null;
+let caretTeardown: (() => void) | null = null;
 
 let viewportEl: HTMLElement;
 let sliderEl: HTMLElement;
@@ -50,9 +59,27 @@ function mountSliderForState(): void {
 function renderCurrent(): void {
   viewportEl.dataset.zoom = String(currentLevel);
   if (currentTable && currentIndex) {
+    // TODO(Task 2.4): migrate to full store-driven rendering (zoom transition).
     renderLevel(viewportEl, currentTable, currentIndex, currentLevel);
   }
+  remountCaret();
   mountSliderForState();
+}
+
+/**
+ * (Re)mount the read-only caret after a render. Only k=0 renders `.pnode`s;
+ * at k=−1/−2 there is nothing to place a caret on, so we tear down and skip.
+ * Caret placements feed the store; the reducer recomputes activeGroupHead
+ * (spec §3.2) which focus-mask + anchor consume in later tasks.
+ */
+function remountCaret(): void {
+  caretTeardown?.();
+  caretTeardown = null;
+  const hasParagraphs = !!currentTable && currentLevel === 0;
+  if (!hasParagraphs) return;
+  caretTeardown = mountCaret(viewportEl, (pid, offset) =>
+    actions$.next(caretPlaced(pid, offset)),
+  );
 }
 
 /** Set the active zoom level. Ignores levels whose summaries don't exist. */
@@ -95,6 +122,9 @@ function applyResult(result: LoadResultDTO): void {
     layer.appendChild(pre);
     viewportEl.replaceChildren(layer);
     viewportEl.dataset.zoom = '0';
+    // Raw view has no `.pnode`s — no caret target.
+    caretTeardown?.();
+    caretTeardown = null;
 
     statusEl.textContent =
       result.kind === 'corrupt' ? `Corrupt: ${result.error}` : 'Untagged';
@@ -104,6 +134,10 @@ function applyResult(result: LoadResultDTO): void {
 
 export async function openFile(path: string): Promise<void> {
   const result = await invoke<LoadResultDTO>('load_document', { path });
+  // Feed the store so it holds doc/index/raw (caret→activeGroupHead recompute,
+  // Task 2.5). Direct render below stays until full store-driven rendering
+  // migrates in Task 2.4.
+  actions$.next(docLoaded(result));
   applyResult(result);
 
   // `watch_directory` (spec §5) lands in Task 3.1 and is not yet registered
@@ -226,6 +260,42 @@ function installKeyboardShortcuts(): void {
   });
 }
 
+let devHudSub: Subscription | null = null;
+
+/**
+ * Dev HUD (Task 2.2 "done when"): behind `?dev`, a low-key corner readout of
+ * the caret's paragraphId + offset, driven by the store's selectCaret selector.
+ * Subscribing to a selector (not actions$) keeps main.ts consistent with the
+ * component discipline. Remembered in `devHudSub` for teardown.
+ */
+function installDevHud(): void {
+  if (!location.search.includes('dev')) return;
+  const hud = document.createElement('div');
+  hud.id = 'dev-hud';
+  Object.assign(hud.style, {
+    position: 'fixed',
+    bottom: '8px',
+    right: '8px',
+    zIndex: '9999',
+    font: '11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace',
+    padding: '4px 8px',
+    background: 'rgba(0,0,0,0.6)',
+    color: '#8f8',
+    borderRadius: '4px',
+    pointerEvents: 'none',
+    opacity: '0.6',
+  });
+  document.body.appendChild(hud);
+  devHudSub = selectCaret().subscribe((caret) => {
+    hud.textContent = `caret: ${caret.paragraphId ?? '—'} @${caret.offset}`;
+  });
+  // main.ts owns lifecycles: release the subscription when the window unloads.
+  window.addEventListener('beforeunload', () => {
+    devHudSub?.unsubscribe();
+    devHudSub = null;
+  });
+}
+
 window.addEventListener('DOMContentLoaded', () => {
   viewportEl = document.querySelector<HTMLElement>('#viewport')!;
   sliderEl = document.querySelector<HTMLElement>('#slider')!;
@@ -235,6 +305,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   void installMenu();
   installKeyboardShortcuts();
+  installDevHud();
 
   // The watcher fires this on disk change. Silent hot-reload lands in Task 3.2;
   // for now, re-render the current document.
