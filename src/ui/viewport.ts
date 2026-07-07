@@ -204,7 +204,12 @@ function runTransition(
     // --- Anchor at the SOURCE level (cached offsets of the current layer). ---
     const center = oldLayer ? oldLayer.scrollTop + oldLayer.clientHeight / 2 : 0;
     const boxes = oldLayer ? mountedBoxes(oldLayer, source) : [];
-    const anchorId = resolveAnchor(st.caret.paragraphId, boxes, center);
+    // The caret is a LEVEL-0 concept (§2.5 rule 1) — it's only a valid anchor
+    // when zooming FROM raw. At −1/−2 fall back to nearest-center (a section/
+    // meta id); otherwise a stale caret pid would be mapped as if it were a
+    // section id (`table.sections[pid]` → undefined) and crash the transition.
+    const caretAnchor = source === 0 ? st.caret.paragraphId : null;
+    const anchorId = resolveAnchor(caretAnchor, boxes, center);
 
     // Remember the place we're leaving so zooming back in feels "remembered".
     if (anchorId) {
@@ -223,7 +228,19 @@ function runTransition(
       lastCaretIn: st.lastCaretIn,
       lastAnchorIn: st.lastAnchorIn,
     };
-    const targetId = anchorId ? mapAcrossLevels(source, target, anchorId, ctx) : null;
+    // Defense in depth: a malformed anchor must NEVER throw here — this runs
+    // inside the switchMap's inner observable, so an uncaught throw errors the
+    // subscription and permanently stops all future zoom switches. Degrade to
+    // an un-centered transition instead of crashing.
+    let targetId: string | null = null;
+    if (anchorId) {
+      try {
+        targetId = mapAcrossLevels(source, target, anchorId, ctx);
+      } catch (err) {
+        console.error('[zoom] anchor mapping failed; transitioning without centering:', err);
+        targetId = null;
+      }
+    }
 
     // --- Frame n: append target layer hidden. NO layout read here (D8). ---
     const newLayer = buildLevel(st.table, st.index, target);

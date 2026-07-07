@@ -175,6 +175,37 @@ test('transitionend unmounts the old layer and clears [data-transitioning]', () 
   expect(viewport.dataset.zoom).toBe('-1');
 });
 
+test('regression: a stale level-0 caret does not crash a transition FROM sections', () => {
+  // Reproduces the reported hang, following the real flow: click raw content
+  // (sets caret paragraphId), zoom to Sections, then zoom back. Before the fix,
+  // at source −1 the stale P-id was used as the anchor and `mapAcrossLevels`
+  // did `table.sections[<pid>].children[0]` → threw → the switchMap subscription
+  // errored and ALL further zoom switches stopped responding.
+  caret = { paragraphId: 'P1a', offset: 0 }; // clicked a raw paragraph
+
+  // 0 → −1 and settle (store zoom tracks via requestLevel's zoomSet).
+  requestLevel(-1);
+  let entering = viewport.querySelector('.level-layer[data-entering]') as HTMLElement;
+  flushFrame();
+  fireOpacityEnd(entering);
+  expect(viewport.querySelector('.level-layer')?.getAttribute('data-level')).toBe('-1');
+
+  // The caret pid is still stale at −1. Zooming back to raw must NOT throw
+  // (a throw would error the switchMap subscription forever)...
+  expect(() => requestLevel(0)).not.toThrow();
+  // ...and the transition still runs: an entering level-0 layer is appended.
+  expect(
+    viewport.querySelectorAll('.level-layer[data-level="0"][data-entering]').length,
+  ).toBe(1);
+
+  // Crucially, zoom STILL responds afterward — settle, then zoom again.
+  entering = viewport.querySelector('.level-layer[data-entering]') as HTMLElement;
+  flushFrame();
+  fireOpacityEnd(entering);
+  requestLevel(-2);
+  expect(viewport.querySelectorAll('.level-layer[data-entering]').length).toBe(1);
+});
+
 test('a superseded zoom aborts the previous transition (switchMap) — one final layer', () => {
   caret = { paragraphId: 'P1a', offset: 0 };
   requestLevel(-1); // frame n for −1
