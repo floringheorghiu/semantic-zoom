@@ -18,6 +18,7 @@
 | D6 | IDs "assigned in document order" (`P14`) | **Content-addressed IDs**: `P-<hash8>-<n>`, `S-<hash8>-<n>`; meta stays positional (`M1`) | Review finding: sequential IDs shift on mid-document insertion, silently re-anchoring the caret to *different content with the same name* after hot reload. Hash+ordinal survives insertions; the Rust validator recomputes hashes so agent payloads cannot lie. |
 | D7 | Hot reload = "swap the doc… one render pass" | Keyed per-group DOM reconciliation | A full rebuild of a 5k-line doc blocks the main thread past the 250ms budget. With D6, "ID unchanged" means "bytes unchanged" — unchanged groups keep their DOM nodes by identity. |
 | D8 | Mount hidden layer, read `offsetTop` synchronously | Two-frame mount (append in frame n, measure+scroll+fade in frame n+1) + `content-visibility:auto` on groups | One synchronous forced layout of a 10k-paragraph tree can exceed the frame budget alone. Reviewer's alternative (heights estimated from char counts) rejected: approximate positions break exact centering, defeating the anchor engine. |
+| D9 | (n/a — new request) Engine B was scoped to a **local** Ollama endpoint only (D3); this was changed to remote-LLM-API synthesis (§8) | Remote synthesis gets **two new Tauri crossings** (`save_api_key`, `synthesize_levels`) beyond the three the plan fixed in §1, plus a **new Rust-owned secret** (API key in OS Keychain) and a **new Rust disk write** (payload write-back). All three are confined to a new `src/native/**` directory, kept outside `src/engine/**`/`src/ui/**` so the `no-restricted-imports` rule and the System E export stay untouched. | Sending document content to a third-party API is a real trust-boundary change from the all-local Phase 1 design — it must be visible to the user (§8.5), not silent. The key must never enter the webview/JS heap past the moment it's saved, or it risks shipping inside the System E static export, which reuses `src/engine/**`/`src/ui/**` verbatim. |
 
 ---
 
@@ -929,4 +930,126 @@ Engine B synthesis, Ollama integration, prompt templates; HTML export (System E)
 
 ---
 
-*End of Phase 1 plan. The contract files (`schema.ts`, Rust mirrors, `docs/payload-format.md`) are the spine — get 1.2 reviewed before anything downstream is written.*
+## 8. Engine B — Remote LLM Synthesis (Phase 2/3 addendum, D9)
+
+**Status: architecture only, not started.** This section does not begin until the Phase 1 backlog (§7) is complete — Engine B ships as the stub in §2.7 until then. It documents the design for generating the missing k=−1/−2 levels via a remote LLM API (model TBD, e.g. a MiMo-v2.5-Pro-class endpoint — kept swappable, since D3 already shows model recommendations here have superseded each other once) plus the API-key settings dialog, and formalizes the deviation from D3/§2.7's local-Ollama-only design as **D9** (§0).
+
+### 8.1 Why this doesn't slot into the existing three crossings
+
+§1's rule — *"Rust owns disk truth, TypeScript owns view truth, exactly three crossings"* — held because Phase 1 has no secrets and no network egress. Remote synthesis introduces both. Two new Tauri commands are unavoidable, but everything that depends on Tauri for this feature is isolated into a **new top-level directory, `src/native/`**, which sits outside the `no-restricted-imports` glob (`src/engine/**`, `src/ui/**`). This means:
+
+- The existing lint rule is **not modified or excepted** — it still means what it always meant.
+- System E's static export (§6), which reuses `src/engine/**` + `src/ui/**` verbatim, is **structurally incapable** of pulling in the API-key or network code, because that code was never placed under those directories in the first place. No exception list to keep in sync, no risk of a future refactor accidentally dragging a secret into an exported HTML file.
+
+```
+src/
+  engine/
+    engine-b.ts            # UNCHANGED: Synthesizer interface + stubSynthesizer (§2.7)
+  native/                  # NEW — Tauri-dependent, excluded from System E export
+    engine-b-remote.ts      # real Synthesizer impl; invoke('synthesize_levels', ...)
+    settings-window.ts      # opens/bootstraps the Settings window
+    settings-form.ts        # form logic — never retains the raw key past Save
+src-tauri/src/commands/
+  secrets.rs                # NEW: save_api_key / get_api_key_status / delete_api_key
+  synthesize.rs             # NEW: synthesize_levels — HTTP call + validate() + verify_ids() + write-back
+```
+
+`main.ts` (which already legitimately imports `@tauri-apps/*`) is the only place that chooses between `stubSynthesizer` and the real `src/native/engine-b-remote.ts` implementation — `engine-b.ts`'s interface contract doesn't change at all.
+
+### 8.2 API key: Rust-owned secret, never in the webview
+
+The key must never exist in JS state longer than the instant it's typed, or it inherits every risk of the untrusted webview context (inspectable, and structurally reusable by the System E exporter if the code ever moved).
+
+```rust
+// src-tauri/src/commands/secrets.rs
+use keyring::Entry;
+
+const SERVICE: &str = "com.semantic-zoom.llm-api-key";
+
+#[tauri::command]
+pub fn save_api_key(key: String) -> Result<(), String> {
+    Entry::new(SERVICE, "default").and_then(|e| e.set_password(&key)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_api_key_status() -> bool {
+    Entry::new(SERVICE, "default").and_then(|e| e.get_password()).is_ok()
+}
+
+#[tauri::command]
+pub fn delete_api_key() -> Result<(), String> {
+    Entry::new(SERVICE, "default").and_then(|e| e.delete_credential()).map_err(|e| e.to_string())
+}
+```
+
+`get_api_key_status` returns a bool, never the key. `Cargo.toml`: `cargo add keyring`. Uses macOS Keychain Services under the hood — consistent with §1's macOS-only Phase 1 target, no cross-platform abstraction needed.
+
+`src/native/settings-form.ts` (sketch): a text input, a Save button that calls `invoke('save_api_key', { key: input.value })` then immediately clears `input.value` and never assigns it to any variable that outlives the handler; a status line driven by `invoke('get_api_key_status')` on mount (`"API key saved ✓"` / `"No key set"`); a Remove button calling `delete_api_key`.
+
+### 8.3 Settings window
+
+A second native Tauri window (per the clarifying answer — not an in-app modal), opened from a menu item (`Semantic Zoom → Settings…`, ⌘,):
+
+```rust
+// src-tauri/src/commands/window.rs (or inline in a menu event handler)
+#[tauri::command]
+pub fn open_settings_window(app: tauri::AppHandle) -> Result<(), String> {
+    if app.get_webview_window("settings").is_some() { return Ok(()); } // focus, don't duplicate
+    tauri::WebviewWindowBuilder::new(&app, "settings", tauri::WebviewUrl::App("settings.html".into()))
+        .title("Settings")
+        .inner_size(420.0, 220.0)
+        .resizable(false)
+        .build()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+```
+
+`settings.html` is a second Vite entry point bundling only `src/native/settings-form.ts` — it never loads the document viewport, store, or engine modules, so it has nothing to leak even by accident.
+
+### 8.4 Generation command and disk write-back
+
+```rust
+// src-tauri/src/commands/synthesize.rs
+#[tauri::command]
+pub async fn synthesize_levels(path: String, raw: String, doc_hash: String) -> Result<LookupTable, String> {
+    let key = Entry::new(SERVICE, "default")
+        .and_then(|e| e.get_password())
+        .map_err(|_| "No API key configured".to_string())?;
+
+    let table = call_remote_llm(&key, &raw).await?;   // builds S/M layers only; P-nodes untouched
+    table.validate()?;
+    table.verify_ids(&raw)?;                          // same gate Engine A payloads pass through
+
+    // Write-back is only safe if the file is unchanged since we read it —
+    // otherwise we'd silently clobber an edit made while the request was in flight.
+    let current = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    if sha256_hex(&current) == doc_hash {
+        std::fs::write(&path, append_payload_marker(&current, &table)).map_err(|e| e.to_string())?;
+    }
+    // Hash still matches → docHash covers only bytes preceding the marker (A1), so this
+    // append doesn't change it. The watcher's own debounced `doc://changed` fires next,
+    // load_document re-extracts as `Native`, and the existing hash short-circuit (§5.3
+    // step 2) means the reload is a no-op from the user's point of view — no flicker.
+    Ok(table)
+}
+```
+
+If the hash doesn't match (user edited the file mid-request), the result is returned to the frontend for the current session only and *not* written to disk — silently overwriting a concurrent edit would violate the "fixtures/user files are never mutated behind their back" spirit even though this isn't a fixture.
+
+### 8.5 Frontend flow and visible trust boundary
+
+- `DocStatus` (§3.1) gains `'synthesizing'`. Slider's −1/−2 detents, when the doc is `Untagged` and `get_api_key_status()` is true, show a "Generate" affordance instead of being permanently disabled (§2.7's stub UX still applies verbatim when no key is set).
+- Clicking it calls `invoke('synthesize_levels', ...)`; success merges the returned `meta`/`sections` into the existing table via the same `DOC_LOADED`-shaped action (paragraphs/spans are never touched by Engine B — k=0 truth stays Engine A's alone). Failure surfaces as the same calm, non-modal toast pattern as the existing `Corrupt` badge (§5.3 step 6) — no popups, no diff view, per the spec's UX tone.
+- **Visible consent, not a buried network call:** the Generate affordance's tooltip states plainly that generating sends the document's text to the configured API. This is the one place Phase 1's "100% local, zero network egress" property changes, and it must be legible to the user at the point of action, not just in a settings screen they may never open.
+- Mid-flight cancellation reuses the existing `switchMap`-abort pattern (§3.2 row 1): a hot reload or a new generation request aborts the in-flight one.
+
+### 8.6 Open product questions (not architectural — need a product call before build starts)
+
+- Token/cost ceiling: truncate or chunk very large documents before sending, or send whole-file unconditionally?
+- Regenerate affordance once a Native payload already exists (re-run Engine B and overwrite the existing −1/−2 layers), or is generation strictly one-shot per untagged file?
+- Provider abstraction: pin to one HTTP shape now, or design `call_remote_llm` against a small trait so the endpoint/model is a config value, not a code change (recommended, given D3 already had to be revised once).
+
+---
+
+*End of Phase 1 plan. The contract files (`schema.ts`, Rust mirrors, `docs/payload-format.md`) are the spine — get 1.2 reviewed before anything downstream is written. §8 is a Phase 2/3 addendum and does not gate any Phase 1 task.*
