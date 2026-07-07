@@ -8,14 +8,14 @@ import { Menu, Submenu, MenuItem, PredefinedMenuItem } from '@tauri-apps/api/men
 
 import { buildIndex, type ZoomLevel, type LookupTable, type ResolvedIndex } from './engine/schema';
 import type { LoadResultDTO } from './engine/engine-a';
-import { renderLevel } from './ui/viewport';
+import { renderLevel, mountZoomTransitions, type ZoomTransitionState } from './ui/viewport';
 import { mountSlider } from './ui/slider';
 import { mountCaret } from './ui/caret';
 
 // The store: main.ts is the only place (with state/) allowed to feed actions$.
 // Components dispatch + subscribe to selectors; only this file wires the bus.
-import { actions$ } from './state/store';
-import { caretPlaced, docLoaded } from './state/actions';
+import { actions$, snapshot } from './state/store';
+import { caretPlaced, docLoaded, zoomSet } from './state/actions';
 import { selectCaret } from './state/selectors';
 import type { Subscription } from 'rxjs';
 
@@ -33,6 +33,7 @@ let currentIndex: ResolvedIndex | null = null;
 let summariesAvailable = false;
 let sliderTeardown: (() => void) | null = null;
 let caretTeardown: (() => void) | null = null;
+let zoomTeardown: (() => void) | null = null;
 
 let viewportEl: HTMLElement;
 let sliderEl: HTMLElement;
@@ -49,10 +50,28 @@ function mountSliderForState(): void {
   const available = availableLevels();
   const disabledLevels = ([0, -1, -2] as ZoomLevel[]).filter((l) => !available.includes(l));
   sliderTeardown = mountSlider(sliderEl, {
-    onChange: setLevel,
+    onChange: requestLevel,
     disabledLevels,
     active: currentLevel,
   });
+}
+
+/**
+ * Snapshot the transition effect reads at ZOOM_SET time (spec §2.5). `level` is
+ * the level currently mounted — the transition's SOURCE. Returns null for
+ * raw/untagged docs (no summaries → no cross-level transition).
+ */
+function getZoomState(): ZoomTransitionState | null {
+  if (!currentTable || !currentIndex) return null;
+  const s = snapshot();
+  return {
+    table: currentTable,
+    index: currentIndex,
+    level: currentLevel,
+    caret: s.caret,
+    lastCaretIn: s.lastCaretIn,
+    lastAnchorIn: s.lastAnchorIn,
+  };
 }
 
 /** Render the current document at `currentLevel` and sync the slider. */
@@ -82,25 +101,37 @@ function remountCaret(): void {
   );
 }
 
-/** Set the active zoom level. Ignores levels whose summaries don't exist. */
-function setLevel(level: ZoomLevel): void {
+/**
+ * Request a zoom-level change. Dispatches `ZOOM_SET`, which the two-frame
+ * transition effect (spec §2.5) picks up via `switchMap`. `actions$.next` runs
+ * the effect's frame n SYNCHRONOUSLY while `currentLevel` still holds the SOURCE
+ * level (what `getZoomState` reports); we advance `currentLevel` to the target
+ * only after, then remount caret + slider against the freshly-appended layer.
+ */
+function requestLevel(level: ZoomLevel): void {
   if (!availableLevels().includes(level)) return;
   if (level === currentLevel) return;
+  actions$.next(zoomSet(level)); // frame n mounts the entering layer synchronously
   currentLevel = level;
-  // No transition yet (Task 2.4) — re-render instantly.
-  renderCurrent();
+  viewportEl.dataset.zoom = String(level);
+  remountCaret();
+  mountSliderForState();
 }
 
 /** Step zoom: +1 = zoom in (toward raw/0), −1 = zoom out (toward story/−2). */
 function stepZoom(dir: 1 | -1): void {
   const target = Math.max(-2, Math.min(0, currentLevel + dir)) as ZoomLevel;
-  setLevel(target);
+  requestLevel(target);
 }
 
 /** Apply a freshly loaded document. Resets to the raw level. */
 function applyResult(result: LoadResultDTO): void {
   currentResult = result;
   currentLevel = 0;
+  // Reset the store's zoom to 0 so a later ZOOM_SET isn't swallowed by
+  // distinctUntilChanged if the previous doc left a non-zero level. The
+  // transition effect no-ops on this (source === target === 0).
+  actions$.next(zoomSet(0));
 
   if (result.kind === 'native') {
     summariesAvailable = true;
@@ -215,9 +246,9 @@ async function installMenu(): Promise<void> {
   const viewMenu = await Submenu.new({
     text: 'View',
     items: [
-      await MenuItem.new({ id: 'lvl-raw', text: 'Detail (Raw)', accelerator: 'CmdOrCtrl+1', action: () => setLevel(0) }),
-      await MenuItem.new({ id: 'lvl-sections', text: 'Sections', accelerator: 'CmdOrCtrl+2', action: () => setLevel(-1) }),
-      await MenuItem.new({ id: 'lvl-story', text: 'Story', accelerator: 'CmdOrCtrl+3', action: () => setLevel(-2) }),
+      await MenuItem.new({ id: 'lvl-raw', text: 'Detail (Raw)', accelerator: 'CmdOrCtrl+1', action: () => requestLevel(0) }),
+      await MenuItem.new({ id: 'lvl-sections', text: 'Sections', accelerator: 'CmdOrCtrl+2', action: () => requestLevel(-1) }),
+      await MenuItem.new({ id: 'lvl-story', text: 'Story', accelerator: 'CmdOrCtrl+3', action: () => requestLevel(-2) }),
       await sep(),
       await MenuItem.new({ id: 'zoom-in', text: 'Zoom In', accelerator: 'CmdOrCtrl+Plus', action: () => stepZoom(1) }),
       await MenuItem.new({ id: 'zoom-out', text: 'Zoom Out', accelerator: 'CmdOrCtrl+-', action: () => stepZoom(-1) }),
@@ -249,9 +280,9 @@ function installKeyboardShortcuts(): void {
     if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
 
     switch (e.key) {
-      case '1': setLevel(0); break;
-      case '2': setLevel(-1); break;
-      case '3': setLevel(-2); break;
+      case '1': requestLevel(0); break;
+      case '2': requestLevel(-1); break;
+      case '3': requestLevel(-2); break;
       case ']': stepZoom(1); break;   // zoom in toward raw
       case '[': stepZoom(-1); break;  // zoom out toward story
       default: return;
@@ -302,6 +333,14 @@ window.addEventListener('DOMContentLoaded', () => {
   statusEl = document.querySelector<HTMLElement>('#status')!;
 
   document.querySelector('#open-file')?.addEventListener('click', () => void promptOpen());
+
+  // Mount the two-frame zoom-transition effect once (spec §2.5). Subsequent
+  // ZOOM_SET actions drive crossfades; the first render on open stays direct.
+  zoomTeardown = mountZoomTransitions(viewportEl, getZoomState);
+  window.addEventListener('beforeunload', () => {
+    zoomTeardown?.();
+    zoomTeardown = null;
+  });
 
   void installMenu();
   installKeyboardShortcuts();

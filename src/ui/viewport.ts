@@ -1,11 +1,21 @@
+import { Subject, animationFrameScheduler, Observable } from 'rxjs';
+import { observeOn, switchMap } from 'rxjs/operators';
+
 import type { LookupTable, ResolvedIndex, ZoomLevel } from '../engine/schema';
+import {
+  resolveAnchor,
+  mapAcrossLevels,
+  centerScrollTop,
+  type MountedBox,
+  type MapCtx,
+} from '../engine/anchor';
+import { selectZoom } from '../state/selectors';
 
 /**
- * Static three-level renderer (§4.1). Builds the level's DOM into a fresh
- * child container and swaps it in as the viewport's single child.
- *
- * Iterate `table.order.*` arrays — NEVER `Object.keys` (spec §2.2 rule): the
- * order arrays are the document-order contract; object key order is not.
+ * Static three-level renderer (§4.1). Swaps the freshly-built level layer in as
+ * the viewport's single child. Delegates DOM construction to `buildLevel` so the
+ * zoom transition (§2.5) can build a SECOND layer without re-implementing it —
+ * `renderLevel` keeps its original observable behavior (build + replaceChildren).
  *
  * Keyed reconciliation (DOM node reuse for hot reload) lands in Task 3.2; a
  * fresh-child swap is correct for a static render.
@@ -13,9 +23,27 @@ import type { LookupTable, ResolvedIndex, ZoomLevel } from '../engine/schema';
 export function renderLevel(
   container: HTMLElement,
   table: LookupTable,
-  _index: ResolvedIndex,
+  index: ResolvedIndex,
   level: ZoomLevel,
 ): void {
+  container.replaceChildren(buildLevel(table, index, level));
+  container.dataset.zoom = String(level);
+}
+
+/**
+ * Build the fully-populated `.level-layer` for `level` (reading column +
+ * groups/cards/tables) and return it WITHOUT mounting it. This is everything
+ * `renderLevel` builds except the `container.replaceChildren` swap, so the
+ * transition effect can append it as an overlay layer.
+ *
+ * Iterate `table.order.*` arrays — NEVER `Object.keys` (spec §2.2 rule): the
+ * order arrays are the document-order contract; object key order is not.
+ */
+export function buildLevel(
+  table: LookupTable,
+  _index: ResolvedIndex,
+  level: ZoomLevel,
+): HTMLElement {
   const layer = document.createElement('div');
   layer.className = 'level-layer';
   layer.dataset.level = String(level);
@@ -84,8 +112,196 @@ export function renderLevel(
     }
   }
 
-  container.replaceChildren(layer);
-  container.dataset.zoom = String(level);
+  return layer;
+}
+
+// --- Zoom transition: two-frame layer crossfade (§2.5, D8) ------------------
+
+/**
+ * The single rAF-scheduled scroll-write queue (spec §3.2). EVERY scroll write
+ * in the transition path funnels through this Subject; `observeOn` batches the
+ * actual `el.scrollTop = top` to an animation frame so a layout read never sits
+ * mid-write. Never assign `.scrollTop` directly elsewhere in the transition.
+ */
+export const scrollCommands$ = new Subject<{ el: HTMLElement; top: number }>();
+scrollCommands$.pipe(observeOn(animationFrameScheduler)).subscribe(({ el, top }) => {
+  el.scrollTop = top;
+});
+
+/** State snapshot the transition reads at the moment a ZOOM_SET fires. */
+export interface ZoomTransitionState {
+  table: LookupTable;
+  index: ResolvedIndex;
+  /** The level currently mounted (the transition's SOURCE). */
+  level: ZoomLevel;
+  caret: { paragraphId: string | null; offset: number };
+  lastCaretIn: Map<string, string>;
+  lastAnchorIn: Map<string, string>;
+}
+
+/** The dataset attribute carrying a node's id at a given level. */
+function idAttr(level: ZoomLevel): 'pid' | 'sid' | 'mid' {
+  return level === 0 ? 'pid' : level === -1 ? 'sid' : 'mid';
+}
+
+/**
+ * Cached layout boxes of the mounted anchor-candidate elements at `level`
+ * (paragraphs at 0, groups at −1/−2). Plain `offsetTop`/`offsetHeight` reads of
+ * the already-laid-out CURRENT layer — no `getBoundingClientRect` loop (§2.5).
+ */
+function mountedBoxes(layer: HTMLElement, level: ZoomLevel): MountedBox[] {
+  const selector = level === 0 ? '.pnode' : '.pgroup';
+  const attr = idAttr(level);
+  const boxes: MountedBox[] = [];
+  for (const el of layer.querySelectorAll<HTMLElement>(selector)) {
+    const id = el.dataset[attr];
+    if (!id) continue;
+    boxes.push({ id, offsetTop: el.offsetTop, offsetHeight: el.offsetHeight });
+  }
+  return boxes;
+}
+
+/** Find the element carrying `id` at `level` inside `layer`. */
+function findNode(layer: HTMLElement, level: ZoomLevel, id: string): HTMLElement | null {
+  const selector =
+    level === 0
+      ? `.pnode[data-pid="${id}"]`
+      : level === -1
+        ? `.pgroup[data-sid="${id}"]`
+        : `.pgroup[data-mid="${id}"]`;
+  return layer.querySelector<HTMLElement>(selector);
+}
+
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
+}
+
+/**
+ * The two-frame transition to `target` as an Observable so `switchMap` can abort
+ * an in-flight one (spec §3.2 row 1). Frame n appends the target layer hidden;
+ * frame n+1 measures + scrolls + starts the opacity fade; `transitionend`
+ * unmounts the old layer. The returned teardown cleans up on abort/completion.
+ */
+function runTransition(
+  viewport: HTMLElement,
+  getState: () => ZoomTransitionState | null,
+  target: ZoomLevel,
+): Observable<void> {
+  return new Observable<void>((subscriber) => {
+    const st = getState();
+    if (!st || !st.table || !st.index || target === st.level) {
+      subscriber.complete();
+      return;
+    }
+    const source = st.level;
+    const oldLayer = viewport.querySelector<HTMLElement>('.level-layer');
+
+    // --- Anchor at the SOURCE level (cached offsets of the current layer). ---
+    const center = oldLayer ? oldLayer.scrollTop + oldLayer.clientHeight / 2 : 0;
+    const boxes = oldLayer ? mountedBoxes(oldLayer, source) : [];
+    const anchorId = resolveAnchor(st.caret.paragraphId, boxes, center);
+
+    // Remember the place we're leaving so zooming back in feels "remembered".
+    if (anchorId) {
+      if (source === 0) {
+        const s = st.index.parentOfParagraph.get(anchorId);
+        if (s) st.lastCaretIn.set(s, anchorId);
+      } else if (source === -1) {
+        const m = st.index.parentOfSection.get(anchorId);
+        if (m) st.lastAnchorIn.set(m, anchorId);
+      }
+    }
+
+    const ctx: MapCtx = {
+      index: st.index,
+      table: st.table,
+      lastCaretIn: st.lastCaretIn,
+      lastAnchorIn: st.lastAnchorIn,
+    };
+    const targetId = anchorId ? mapAcrossLevels(source, target, anchorId, ctx) : null;
+
+    // --- Frame n: append target layer hidden. NO layout read here (D8). ---
+    const newLayer = buildLevel(st.table, st.index, target);
+    newLayer.setAttribute('data-entering', ''); // opacity:0 via CSS
+    newLayer.style.visibility = 'hidden';
+    viewport.appendChild(newLayer);
+    viewport.setAttribute('data-transitioning', ''); // gates will-change (§4.2)
+
+    let done = false;
+    let timeoutId: ReturnType<typeof setTimeout> | 0 = 0;
+    let onEnd: ((e: TransitionEvent) => void) | null = null;
+
+    // --- Frame n+1: one contained measure → scroll → start fade. ---
+    const rafId = requestAnimationFrame(() => {
+      if (targetId) {
+        const el = findNode(newLayer, target, targetId);
+        if (el) {
+          const top = centerScrollTop(
+            { offsetTop: el.offsetTop, offsetHeight: el.offsetHeight },
+            { clientHeight: newLayer.clientHeight, scrollHeight: newLayer.scrollHeight },
+          );
+          scrollCommands$.next({ el: newLayer, top }); // single rAF queue
+        }
+      }
+      newLayer.style.visibility = 'visible';
+      newLayer.removeAttribute('data-entering'); // starts the 200ms opacity fade
+
+      const finish = (): void => {
+        if (done) return;
+        done = true;
+        if (onEnd) newLayer.removeEventListener('transitionend', onEnd);
+        if (timeoutId) clearTimeout(timeoutId);
+        oldLayer?.remove();
+        viewport.removeAttribute('data-transitioning');
+        viewport.dataset.zoom = String(target);
+        subscriber.complete();
+      };
+
+      if (prefersReducedMotion()) {
+        // CSS sets `transition:none` → no transitionend fires; swap next frame.
+        requestAnimationFrame(finish);
+      } else {
+        onEnd = (e: TransitionEvent) => {
+          if (e.propertyName === 'opacity') finish();
+        };
+        newLayer.addEventListener('transitionend', onEnd);
+        // Safety net if transitionend never arrives (e.g. jsdom, tab hidden).
+        timeoutId = setTimeout(finish, 400);
+      }
+    });
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      if (timeoutId) clearTimeout(timeoutId);
+      if (onEnd) newLayer.removeEventListener('transitionend', onEnd);
+      if (!done) {
+        // Superseded (switchMap abort) before settling: drop the half-mounted
+        // entering layer and leave the old layer for the successor transition.
+        newLayer.remove();
+        viewport.removeAttribute('data-transitioning');
+      }
+    };
+  });
+}
+
+/**
+ * Mount the zoom-transition effect (spec §2.5 / §3.2). Subscribes to the zoom
+ * selector through `switchMap`, so a fresh ZOOM_SET aborts the in-flight
+ * transition. `getState` supplies the current doc + SOURCE level + place memory.
+ * Returns a teardown that unsubscribes the effect.
+ */
+export function mountZoomTransitions(
+  viewport: HTMLElement,
+  getState: () => ZoomTransitionState | null,
+): () => void {
+  const sub = selectZoom()
+    .pipe(switchMap((target) => runTransition(viewport, getState, target)))
+    .subscribe();
+  return () => sub.unsubscribe();
 }
 
 // --- Summary body rendering (Story / Section prose) -------------------------

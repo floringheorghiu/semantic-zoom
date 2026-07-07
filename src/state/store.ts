@@ -42,6 +42,10 @@ actions$.subscribe((a) => state$.next(reduce(state$.getValue(), a)));
 export const select = <T>(fn: (s: AppState) => T) =>
   state$.pipe(map(fn), distinctUntilChanged());
 
+/** Synchronous read of the current state (for effects that need a snapshot,
+    e.g. the zoom transition reading caret + place-memory at ZOOM_SET time). */
+export const snapshot = (): AppState => state$.getValue();
+
 /**
  * Pure reducer (§3.2). No side effects; effects live in main.ts / UI modules.
  */
