@@ -14,6 +14,7 @@ import { mountSlider } from './ui/slider';
 import './styles/base.css';
 import './styles/slider.css';
 import './styles/focus-mask.css';
+import './styles/reading.css';
 
 // --- session state (the RxJS store arrives in Task 2.1; direct wiring for now) ---
 let currentLevel: ZoomLevel = 0;
