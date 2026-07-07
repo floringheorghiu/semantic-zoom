@@ -10,7 +10,8 @@
     "tauri": "tauri",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint 'src/**/*.ts'"
+    "lint": "eslint 'src/**/*.ts'",
+    "ci": "npm run lint && (cd src-tauri && cargo test) && npm test"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
