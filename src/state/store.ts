@@ -24,6 +24,7 @@ export interface AppState {
 export type Action =
   | { type: 'DOC_LOADED'; result: import('../engine/engine-a').LoadResultDTO }
   | { type: 'DOC_CHANGED_ON_DISK' }          // from watcher event
+  | { type: 'DOC_CLOSED' }                   // File > Close (⌘W)
   | { type: 'ZOOM_SET'; level: ZoomLevel }
   | { type: 'CARET_PLACED'; paragraphId: string; offset: number };
 
@@ -90,5 +91,16 @@ export function reduce(s: AppState, a: Action): AppState {
 
     case 'DOC_CHANGED_ON_DISK':
       return { ...s, status: 'reloading' };
+
+    case 'DOC_CLOSED':
+      return {
+        ...s,
+        doc: null,
+        index: null,
+        raw: '',
+        status: 'empty',
+        caret: { paragraphId: null, offset: 0 },
+        activeGroupHead: null,
+      };
   }
 }

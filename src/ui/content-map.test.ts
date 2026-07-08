@@ -4,7 +4,6 @@ import { buildIndex, type LookupTable } from '../engine/schema';
 import {
   buildMapModel,
   visibleIds,
-  indicatorOffset,
   mountContentMap,
   type MapEntry,
 } from './content-map';
@@ -116,31 +115,6 @@ test('visibleIds excludes a zero-height group sitting inside the window', () => 
   expect(visibleIds(boxes, 100, 200)).toEqual(new Set());
 });
 
-// --- indicatorOffset --------------------------------------------------------
-
-test('indicatorOffset is 0 when the container is not scrollable', () => {
-  expect(indicatorOffset(0, 500, 500, 100)).toBe(0);
-  expect(indicatorOffset(0, 400, 500, 100)).toBe(0);
-});
-
-test('indicatorOffset is 0 when the track has no height', () => {
-  expect(indicatorOffset(50, 1000, 500, 0)).toBe(0);
-});
-
-test('indicatorOffset reaches trackH at the bottom of the scroll range', () => {
-  // scrollable = 1000 - 500 = 500
-  expect(indicatorOffset(500, 1000, 500, 200)).toBe(200);
-});
-
-test('indicatorOffset is proportional at the midpoint', () => {
-  expect(indicatorOffset(250, 1000, 500, 200)).toBe(100);
-});
-
-test('indicatorOffset clamps out-of-range scrollTop (rubber-band overscroll)', () => {
-  expect(indicatorOffset(-50, 1000, 500, 200)).toBe(0);
-  expect(indicatorOffset(9999, 1000, 500, 200)).toBe(200);
-});
-
 // --- mountContentMap --------------------------------------------------------
 
 const MODEL: MapEntry[] = EXPECTED_SECTION_MODEL;
@@ -152,7 +126,6 @@ test('render builds one bar per group and one dot per separator', () => {
 
   expect(host.querySelectorAll('.map-bar')).toHaveLength(5);
   expect(host.querySelectorAll('.map-sep')).toHaveLength(1);
-  expect(host.querySelector('.map-indicator')).not.toBeNull();
   expect([...host.querySelectorAll('.map-bar')].map((b) => (b as HTMLElement).dataset.barId)).toEqual([
     'S1',
     'S2',
@@ -213,20 +186,6 @@ test('setActive toggles data-active on exactly the given bars', () => {
 
   map.setActive(new Set());
   expect(active()).toEqual([]);
-  map.teardown();
-});
-
-test('setIndicator moves the indicator with a transform, never a layout property', () => {
-  const host = document.createElement('aside');
-  const map = mountContentMap(host, { onSelect: vi.fn() });
-  map.render(MODEL);
-
-  const indicator = host.querySelector<HTMLElement>('.map-indicator')!;
-  map.setIndicator(42);
-  expect(indicator.style.transform).toContain('translateY');
-  expect(indicator.style.transform).toBe('translateY(42px)');
-  expect(indicator.style.top).toBe('');
-  expect(indicator.style.transition).toBe('');
   map.teardown();
 });
 

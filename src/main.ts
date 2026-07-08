@@ -29,8 +29,6 @@ import {
   mountContentMap,
   buildMapModel,
   visibleIds,
-  indicatorOffset,
-  mapTrackHeight,
   type ContentMapHandle,
   type MapBox,
 } from './ui/content-map';
@@ -39,7 +37,7 @@ import { reconcile, restoreCaret, groupKey } from './state/reload';
 // The store: main.ts is the only place (with state/) allowed to feed actions$.
 // Components dispatch + subscribe to selectors; only this file wires the bus.
 import { actions$, snapshot } from './state/store';
-import { caretPlaced, docLoaded, zoomSet } from './state/actions';
+import { caretPlaced, docLoaded, docClosed, zoomSet } from './state/actions';
 import { selectCaret } from './state/selectors';
 import type { Subscription } from 'rxjs';
 
@@ -141,12 +139,11 @@ function getZoomState(): ZoomTransitionState | null {
 // The map is `#content-map`, a sibling of `#viewport` inside `.viewport-wrap`,
 // so `renderLevel`'s `replaceChildren(#viewport)` can never wipe it. main.ts
 // owns every crossing: it injects `onSelect`, rebuilds the model on doc/level/
-// scale change, and drives active + indicator from a rAF-throttled scroll read.
+// scale change, and drives the active-section highlight from a rAF-throttled
+// scroll read.
 
 /** Cached `.pgroup` boxes of the current layer; the scroll path never re-reads. */
 let mapBoxes: MapBox[] = [];
-/** Cached indicator travel distance; recomputed with the boxes, not per frame. */
-let mapTrackH = 0;
 /** Pending scroll-update frame, so bursts of scroll events coalesce into one. */
 let mapRaf = 0;
 /**
@@ -199,14 +196,13 @@ function scrollToGroup(id: string): void {
 }
 
 /**
- * Cache the mounted group boxes (`offsetTop`/`offsetHeight`) and the indicator
- * track height. Plain offset reads of an already-laid-out layer — the same
- * cheap measurement `mountedBoxes` uses in the transition. Called once per
- * render, never per scroll frame.
+ * Cache the mounted group boxes (`offsetTop`/`offsetHeight`). A plain offset
+ * read of an already-laid-out layer — the same cheap measurement
+ * `mountedBoxes` uses in the transition. Called once per render, never per
+ * scroll frame.
  */
 function cacheMapBoxes(): void {
   mapBoxes = [];
-  mapTrackH = 0;
   const layer = currentLayer();
   if (!layer) return;
   for (const el of layer.querySelectorAll<HTMLElement>('.pgroup[data-sid], .pgroup[data-mid]')) {
@@ -214,15 +210,14 @@ function cacheMapBoxes(): void {
     if (!id) continue;
     mapBoxes.push({ id, offsetTop: el.offsetTop, offsetHeight: el.offsetHeight });
   }
-  mapTrackH = mapTrackHeight(contentMapEl);
 }
 
 /**
- * Read the layer's scroll metrics, then write the map's active bars + indicator
- * position AND the reading column's active-group border (§4.6). Strict
- * read-then-write: the boxes and the track height come from the cache, so this
- * touches layout exactly once (the three scroll reads) — the accent border is
- * derived from `mapBoxes` + the SAME `scrollTop`/`clientHeight`, adding no read.
+ * Read the layer's scroll metrics, then write the map's active bars AND the
+ * reading column's active-group border (§4.6). Strict read-then-write: the
+ * boxes come from the cache, so this touches layout exactly once (the two
+ * scroll reads) — the accent border is derived from `mapBoxes` + the SAME
+ * `scrollTop`/`clientHeight`, adding no read.
  *
  * `resolveAnchor(null, …)` is spec §2.5's anchor rule 2 verbatim: passing a null
  * caret forces the nearest-to-viewport-centre branch. The caret is deliberately
@@ -234,7 +229,7 @@ function updateMapFromScroll(): void {
   if (!layer) return;
 
   // --- READS (all of them, together) ---
-  const { scrollTop, scrollHeight, clientHeight } = layer;
+  const { scrollTop, clientHeight } = layer;
 
   // --- WRITES ---
   const activeId = resolveAnchor(null, mapBoxes, scrollTop + clientHeight / 2);
@@ -243,22 +238,20 @@ function updateMapFromScroll(): void {
 
   if (!contentMap) return;
   contentMap.setActive(visibleIds(mapBoxes, scrollTop, clientHeight));
-  contentMap.setIndicator(indicatorOffset(scrollTop, scrollHeight, clientHeight, mapTrackH));
 }
 
 /**
  * Rebuild the map for the current document + level, re-cache the group boxes,
- * and sync active/indicator once. Called after every render, after the zoom
- * transition settles, and after a content-scale change (CSS `zoom` reflows the
- * column, invalidating every cached offset). Hidden for non-native documents,
- * which have no groups to map.
+ * and sync the active highlight once. Called after every render, after the
+ * zoom transition settles, and after a content-scale change (CSS `zoom`
+ * reflows the column, invalidating every cached offset). Hidden for
+ * non-native documents, which have no groups to map.
  */
 function refreshMap(): void {
   if (!contentMap) return;
   if (!currentTable || !currentIndex) {
     contentMapEl.hidden = true;
     mapBoxes = [];
-    mapTrackH = 0;
     return;
   }
   contentMapEl.hidden = false;
@@ -484,6 +477,44 @@ function hideEmptyState(): void {
   emptyStateTeardown = null;
 }
 
+/**
+ * File > Close (⌘W): close the current document and return to the pre-open
+ * empty state, bumping the just-closed path to the front of Recent Files. A
+ * no-op if nothing is open. Note this closes the DOCUMENT, not the window —
+ * the native window-chrome close button still closes the actual window.
+ */
+function closeDocument(): void {
+  if (currentPath === null) return;
+  addRecentFile(currentPath);
+
+  currentPath = null;
+  currentResult = null;
+  currentTable = null;
+  currentIndex = null;
+  currentLevel = 0;
+  summariesAvailable = false;
+  prevGroups = new Map();
+
+  actions$.next(docClosed());
+  actions$.next(zoomSet(0));
+
+  caretTeardown?.();
+  caretTeardown = null;
+  focusMaskTeardown?.();
+  focusMaskTeardown = null;
+  scrubberTeardown?.();
+  scrubberTeardown = null;
+  zoomContextEl.textContent = '';
+  statusEl.textContent = 'No document';
+  statusBadge?.setStatus('native'); // clears any corrupt/untagged note
+
+  viewportEl.replaceChildren();
+  viewportEl.dataset.zoom = '0';
+  resetActiveGroup();
+  refreshMap(); // no table → hides the map
+  showEmptyState();
+}
+
 export async function openFile(path: string): Promise<void> {
   currentPath = path; // remembered so `doc://changed` can silently reload it (§5.3)
   const result = await invoke<LoadResultDTO>('load_document', { path });
@@ -549,8 +580,12 @@ async function installMenu(): Promise<void> {
         accelerator: 'CmdOrCtrl+O',
         action: () => void promptOpen(),
       }),
-      await sep(),
-      await PredefinedMenuItem.new({ item: 'CloseWindow' }),
+      await MenuItem.new({
+        id: 'close-doc',
+        text: 'Close',
+        accelerator: 'CmdOrCtrl+W',
+        action: () => closeDocument(),
+      }),
     ],
   });
 

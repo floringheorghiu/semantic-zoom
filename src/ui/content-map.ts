@@ -2,11 +2,13 @@
 //
 // Tauri-free and store-free by construction (ui/ boundary): this module owns
 // only DOM + the pure model/math. `main.ts` injects `onSelect` and drives
-// `render` / `setActive` / `setIndicator`; the map NEVER writes scroll itself
-// (click-to-scroll must route through the single rAF `scrollCommands$` queue).
+// `render` / `setActive`; the map NEVER writes scroll itself (click-to-scroll
+// must route through the single rAF `scrollCommands$` queue).
 //
-// D1 is preserved: the indicator moves via `transform: translateY()` with NO
-// CSS transition — no layout property is ever animated.
+// The scroll-position indicator hairline was descoped: it couldn't keep up
+// with content scrolling and was more confusing than useful. The active-
+// section highlight (`data-active`, driven by `setActive`) is the map's only
+// affordance now.
 
 import type { LookupTable, ResolvedIndex, ZoomLevel } from '../engine/schema';
 
@@ -24,18 +26,17 @@ export interface ContentMapHandle {
   teardown(): void;
   render(model: MapEntry[]): void;
   setActive(ids: Set<string>): void;
-  setIndicator(offsetPx: number): void;
 }
 
 /** Figma: panel `padding:5px`. */
 export const MAP_PADDING = 5;
-/** Bars and separator dots are both 2px tall. */
-export const MAP_ITEM_H = 2;
+/** Bar height. Deliberately thicker than a minimap hairline — these are click
+    targets (the scroll-position indicator was descoped; the active-section
+    highlight is the map's only affordance now, so it must be easy to hit). */
+export const MAP_ITEM_H = 4;
 /** Figma: `gap:6px`; shrinks toward MAP_MIN_GAP to fit the available height. */
 export const MAP_GAP = 6;
 export const MAP_MIN_GAP = 1;
-/** The position-indicator hairline. */
-export const MAP_INDICATOR_H = 1;
 
 // --- Pure core (unit-tested) ------------------------------------------------
 
@@ -104,34 +105,6 @@ function clamp(n: number, lo: number, hi: number): number {
   return n < lo ? lo : n > hi ? hi : n;
 }
 
-/**
- * Where the position-indicator sits along a `trackH`-tall track, from the
- * scroll ratio `scrollTop / (scrollHeight − clientHeight)`. A non-scrollable
- * container (or a zero-height track) parks the indicator at 0 rather than
- * dividing by zero.
- */
-export function indicatorOffset(
-  scrollTop: number,
-  scrollHeight: number,
-  clientHeight: number,
-  trackH: number,
-): number {
-  const scrollable = scrollHeight - clientHeight;
-  if (scrollable <= 0 || trackH <= 0) return 0;
-  const ratio = clamp(scrollTop / Math.max(1, scrollable), 0, 1);
-  return clamp(ratio * trackH, 0, trackH);
-}
-
-/**
- * The pixel distance the indicator may travel inside `host`. Read by main.ts
- * once per refresh and cached — the scroll handler must not re-measure.
- */
-export function mapTrackHeight(host: HTMLElement): number {
-  const items = host.querySelector<HTMLElement>('.map-items');
-  if (!items) return 0;
-  return Math.max(0, items.clientHeight - MAP_INDICATOR_H);
-}
-
 // --- Mount ------------------------------------------------------------------
 
 /**
@@ -146,13 +119,7 @@ export function mountContentMap(
   const items = document.createElement('div');
   items.className = 'map-items';
 
-  // The position-indicator is a SIBLING of the scrollable item list so it stays
-  // put when the panel overflows and scrolls internally.
-  const indicator = document.createElement('div');
-  indicator.className = 'map-indicator';
-  indicator.setAttribute('aria-hidden', 'true');
-
-  host.replaceChildren(items, indicator);
+  host.replaceChildren(items);
 
   /** Live bars by id, so `setActive` can touch only what changed. */
   const bars = new Map<string, HTMLElement>();
@@ -229,11 +196,6 @@ export function mountContentMap(
     activeIds = new Set(ids);
   }
 
-  function setIndicator(offsetPx: number): void {
-    // transform ONLY — never `top`, never a CSS transition (D1).
-    indicator.style.transform = `translateY(${offsetPx}px)`;
-  }
-
   function teardown(): void {
     items.removeEventListener('click', onClick);
     items.removeEventListener('keydown', onKeyDown);
@@ -242,5 +204,5 @@ export function mountContentMap(
     host.replaceChildren();
   }
 
-  return { teardown, render, setActive, setIndicator };
+  return { teardown, render, setActive };
 }

@@ -15,3 +15,6 @@ export const caretPlaced = (paragraphId: string, offset: number): Action => ({
 export const docLoaded = (result: LoadResultDTO): Action => ({ type: 'DOC_LOADED', result });
 
 export const docChangedOnDisk = (): Action => ({ type: 'DOC_CHANGED_ON_DISK' });
+
+/** File > Close (⌘W): return the store to its pre-open empty state. */
+export const docClosed = (): Action => ({ type: 'DOC_CLOSED' });
