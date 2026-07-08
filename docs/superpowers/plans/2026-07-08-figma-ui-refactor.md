@@ -26,24 +26,12 @@
 
 ---
 
-## 2. Decisions needed before implementation (with recommendations)
+## 2. Decisions (LOCKED — 2026-07-08)
 
-These change the plan materially — please confirm:
-
-**D-A. Theme direction.** The design is light; the app currently runs dark.
-- **Recommended: light-first, keep dark support.** Build the token layer with light values as default and provide a `@media (prefers-color-scheme: dark)` + `:root[data-theme]` dark mapping (the app already ships dark-aware CSS). Costs a bit more but doesn't throw away the dark work and matches macOS appearance settings.
-- Alt 1: **light-only** (drop dark) — simplest, closest to Figma, but regresses dark users.
-- Alt 2: light-first, dark later.
-
-**D-B. The unified zoom scrubber (`−2 … +2`).** The design merges **semantic levels** (`-2/-1/0`) and **content magnification** (`+1/+2`, shown *disabled* at 30%) onto one control.
-- **Recommended: build the scrubber for `-2/-1/0` now and wire `+1/+2` to the existing content-scale** (the ⌘=/⌘- feature). One axis: negative = abstract, `0` = raw 100%, positive = magnify. This is elegant and reuses `content-scale.ts`.
-- Alt: render `+1/+2` disabled (as the mockup shows) and keep content scale on ⌘ only, for now.
-
-**D-C. Fonts.** Inter + Menlo.
-- **Recommended: self-host Inter** (woff2 in `src/assets`, `@font-face`, no CDN — the CSP/offline + Phase-2 `file://` export forbids remote fonts). Menlo is a macOS system mono (no bundling needed).
-- Alt: keep the system font stack (fast, zero assets) and accept a slightly different feel.
-
-**D-D. Scope/PR.** Recommend a **separate branch** from the current `worktree-phase1-plan`, since this is a distinct presentation refactor.
+- **D-A. Theme → light-first, keep dark.** Light values default (match Figma); retain a `@media (prefers-color-scheme: dark)` + `:root[data-theme="dark"]` mapping so dark users aren't regressed. The token layer (§3) carries both.
+- **D-B. Scrubber `+1/+2` → shown DISABLED.** Build the bottom scrubber for `-2/-1/0` (the semantic levels). Render `+1/+2` greyed at 30% opacity exactly as the mockup does — they are **not wired**. **Content scale stays on the ⌘=/⌘-/⌘0 shortcuts only** (the existing `content-scale.ts`), independent of the scrubber. (Leaves the door open to wire them later without rework.)
+- **D-C. Fonts → keep the system stack.** No Inter bundling. Use the current `-apple-system, BlinkMacSystemFont, 'Segoe UI', …` stack; Menlo/`ui-monospace` for IDs. Accept the minor feel difference from Inter. (`--sz-font` = system stack.)
+- **D-D. Branch → continue on `worktree-phase1-plan`** alongside the Phase-1 work.
 
 ---
 
@@ -72,8 +60,8 @@ Extract everything to CSS custom properties so components stop hard-coding color
   --sz-info:          #2f58bc;   /* Next Step */
   --sz-warn:          #bb4d00;   /* Blocker (CONFIRM exact from node 36:768) */
 
-  /* type */
-  --sz-font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  /* type (D-C: system stack, no Inter bundling) */
+  --sz-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --sz-mono: 'Menlo', ui-monospace, SFMono-Regular, monospace;
 
   /* radii / shadow */
@@ -107,8 +95,8 @@ All changes are in `src/ui/**`, `src/styles/**`, `index.html`, and the two `main
 - Structure from `ZoomSlider` (36:379): a fully-rounded track `--sz-track`, `--sz-border`, `--sz-shadow-pill`, `gap 4px`, `padding ~5px`; a `−` round button (32px), five segments `-2 -1 0 +1 +2`, a `+` round button.
 - **Active segment**: white bg + `--sz-shadow-pill`, text `--sz-ink`. **Inactive**: text `--sz-muted`. **Disabled** (unavailable level / content-magnify off): `--sz-muted-30`.
 - Position: `position: fixed`/absolute bottom-center over the viewport (a floating footer), with the **context count** ("N milestones/sections") bottom-right.
-- **Behavior (per D-B):** segments `-2/-1/0` dispatch `zoomSet(level)` (existing); `−`/`+` step the scrubber; `+1/+2` (if enabled) call the content-scale (`scaleContent`) — i.e. positive positions magnify raw content. Keep `disabledLevels` semantics for `-1/-2` on untagged/corrupt docs.
-- **Migration note:** `mountSlider`'s API (`onChange`, `disabledLevels`, `active`) is largely reused; add an `onScale`/`activeScale` for the positive side. `main.ts` swaps `mountSliderForState()` internals only.
+- **Behavior (per D-B):** segments `-2/-1/0` dispatch `zoomSet(level)` (existing); `−`/`+` step across the enabled `-2/-1/0` range. **`+1/+2` are rendered permanently disabled** (`--sz-muted-30`, non-interactive) — a visible affordance for future content-magnify, not wired. Content scale remains on ⌘=/⌘-/⌘0 only. Keep `disabledLevels` semantics for `-1/-2` on untagged/corrupt docs.
+- **Migration note:** `mountSlider`'s API (`onChange`, `disabledLevels`, `active`) is reused as-is — only the markup/CSS change to the segmented pill and the two static disabled `+1/+2` cells are added. `main.ts` swaps `mountSliderForState()` internals only.
 
 ### 4.4 Story/Section cards — `viewport.ts` (`buildLevel` for −1/−2) + `reading.css`
 - Wrap each `-2` meta group (and `-1` section group) in a **`MetaCard`**: `--sz-bg`, `1px --sz-border`, `--sz-radius-card`, `overflow: clip`.
@@ -134,15 +122,14 @@ All changes are in `src/ui/**`, `src/styles/**`, `index.html`, and the two `main
 
 ## 5. Phased task breakdown (TDD where logic exists; visual where it doesn't)
 
-1. **Tokens + theme skeleton** — add `tokens.css`; convert `base.css` to light + `var(--sz-*)`; wire dark mapping. *Check:* build + existing tests green; app renders light. *(GUI eyeball.)*
-2. **Fonts** (D-C) — self-host Inter woff2 + `@font-face`; apply `--sz-font`. *Check:* no network fonts (grep), build green.
-3. **Window chrome + Updated pill** — trim toolbar; restyle `status-badge` pill top-right; drop top Open button. *Check:* status-badge tests still pass (restyle only).
-4. **Per-level header** — new `header.ts` + test (subtitle string from `table.order` counts is a pure function → unit-test it). *Check:* header test + build.
-5. **Bottom zoom scrubber** — `zoom-scrubber.ts` replacing `slider.ts`; port slider tests (detents, disabled, active) to the new markup; wire `main.ts`. *Check:* scrubber tests green; ⌘1/2/3 + slider agree.
-6. **Story/Section cards + footer/ID range** — `buildLevel`/`buildGroup` card chrome; extend the summary tests; verify **reconcile still reuses card nodes** (existing reconcile test guards it). *Check:* viewport/summary/reconcile tests green.
-7. **Badge label+tick restyle** — `renderSummaryBody` markup + CSS; keep `badgeVariant` logic/tests. *Check:* summary tests green.
-8. **Focus blue-border + code/table light skin** — CSS only. *Check:* focus-mask test green (logic unchanged); Instruments spotlight still smooth (D1 opacity-only preserved).
-9. **Polish pass** — spacing/rhythm vs Figma at each level; screenshot-compare (`get_screenshot` per node) to the three mockups. *(GUI.)*
+1. **Tokens + theme skeleton** — add `tokens.css` (light defaults + dark `@media`/`data-theme` mapping, D-A); convert `base.css` to `var(--sz-*)`; keep the system `--sz-font` (D-C, no font assets). *Check:* build + existing tests green; app renders light. *(GUI eyeball.)*
+2. **Window chrome + Updated pill** — trim toolbar; restyle `status-badge` pill top-right; drop top Open button (Open stays on ⌘O menu). *Check:* status-badge tests still pass (restyle only).
+3. **Per-level header** — new `header.ts` + test (subtitle string from `table.order` counts is a pure function → unit-test it). *Check:* header test + build.
+4. **Bottom zoom scrubber** — `zoom-scrubber.ts` replacing `slider.ts`; port slider tests (detents, disabled, active) to the new segmented-pill markup; add static disabled `+1/+2` cells (D-B); wire `main.ts`. *Check:* scrubber tests green; ⌘1/2/3 + scrubber agree.
+5. **Story/Section cards + footer/ID range** — `buildLevel`/`buildGroup` card chrome; extend the summary tests; verify **reconcile still reuses card nodes** (existing reconcile test guards it). *Check:* viewport/summary/reconcile tests green.
+6. **Badge label+tick restyle** — `renderSummaryBody` markup + CSS; keep `badgeVariant` logic/tests. *Check:* summary tests green.
+7. **Focus blue-border + code/table light skin** — CSS only. *Check:* focus-mask test green (logic unchanged); Instruments spotlight still smooth (D1 opacity-only preserved).
+8. **Polish pass** — spacing/rhythm vs Figma at each level; screenshot-compare (`get_screenshot` per node) to the three mockups. *(GUI.)*
 
 Each step keeps `npm run ci` green; visual acceptance is a GUI eyeball against the matching Figma frame.
 
