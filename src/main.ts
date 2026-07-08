@@ -23,6 +23,8 @@ import { nextScale, SCALE_DEFAULT } from './ui/content-scale';
 import { mountFocusMask } from './ui/focus-mask';
 import { markActiveGroup, clearActiveGroups } from './ui/active-group';
 import { mountStatusBadge, type StatusBadgeHandle } from './ui/status-badge';
+import { mountEmptyState } from './ui/empty-state';
+import { getRecentFiles, addRecentFile } from './state/recent-files';
 import {
   mountContentMap,
   buildMapModel,
@@ -47,6 +49,7 @@ import './styles/scrubber.css';
 import './styles/focus-mask.css';
 import './styles/reading.css';
 import './styles/content-map.css';
+import './styles/empty-state.css';
 
 // --- session state (the RxJS store arrives in Task 2.1; direct wiring for now) ---
 let currentLevel: ZoomLevel = 0;
@@ -68,6 +71,8 @@ let statusBadge: StatusBadgeHandle | null = null;
 /** The content map sidebar (§4.9). Mounted once; driven by refreshMap/scroll. */
 let contentMap: ContentMapHandle | null = null;
 let contentMapTeardown: (() => void) | null = null;
+/** The pre-open placeholder (Figma 77:2622); torn down on the first openFile. */
+let emptyStateTeardown: (() => void) | null = null;
 
 let viewportEl: HTMLElement;
 let scrubberEl: HTMLElement;
@@ -464,9 +469,26 @@ function applyResult(result: LoadResultDTO): void {
   }
 }
 
+/** Show the pre-open placeholder (Figma 77:2622) in the empty viewport. */
+function showEmptyState(): void {
+  emptyStateTeardown?.();
+  emptyStateTeardown = mountEmptyState(viewportEl, {
+    recentFiles: getRecentFiles(),
+    onOpen: () => void promptOpen(),
+    onSelectRecent: (path) => void openFile(path),
+  }).teardown;
+}
+
+function hideEmptyState(): void {
+  emptyStateTeardown?.();
+  emptyStateTeardown = null;
+}
+
 export async function openFile(path: string): Promise<void> {
   currentPath = path; // remembered so `doc://changed` can silently reload it (§5.3)
   const result = await invoke<LoadResultDTO>('load_document', { path });
+  hideEmptyState();
+  addRecentFile(path);
   // Feed the store so it holds doc/index/raw (caret→activeGroupHead recompute,
   // Task 2.5). Direct render below stays until full store-driven rendering
   // migrates in Task 2.4.
@@ -684,6 +706,9 @@ window.addEventListener('DOMContentLoaded', () => {
   // scrollCommands$ (see scrollToGroup).
   mountContentMapOnce();
 
+  // No document is open yet — show the placeholder until the first openFile.
+  showEmptyState();
+
   window.addEventListener('beforeunload', () => {
     zoomTeardown?.();
     zoomTeardown = null;
@@ -695,6 +720,8 @@ window.addEventListener('DOMContentLoaded', () => {
     statusBadge = null;
     contentMapTeardown?.();
     contentMapTeardown = null;
+    emptyStateTeardown?.();
+    emptyStateTeardown = null;
   });
 
   void installMenu();

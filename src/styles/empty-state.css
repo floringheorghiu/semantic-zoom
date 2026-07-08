@@ -1,0 +1,105 @@
+/* Empty state (Figma 77:2622): the pre-open placeholder in #viewport. */
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2rem;
+  width: min(640px, 100%);
+  min-height: 100%;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+.empty-state__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.empty-state__action {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--sz-ink);
+  cursor: pointer;
+}
+
+.empty-state__action:disabled {
+  color: var(--sz-muted);
+  opacity: 0.5;
+  cursor: default;
+}
+
+.empty-state__action:not(:disabled):hover .empty-state__action-label {
+  text-decoration: underline;
+}
+
+.empty-state__action-label {
+  font-size: 0.875rem;
+}
+
+.empty-state__action-key {
+  font: 700 0.75rem/1 var(--sz-mono);
+  letter-spacing: 0.02em;
+  color: var(--sz-muted-50);
+}
+
+.empty-state__recent {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.empty-state__recent-label {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--sz-muted);
+}
+
+.empty-state__recent-item {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  width: 100%;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--sz-border);
+  border-radius: 4px;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.empty-state__recent-item:hover {
+  background: var(--sz-hairline);
+}
+
+.empty-state__recent-name {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--sz-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty-state__recent-path {
+  flex: 0 0 auto;
+  max-width: 60%;
+  font-size: 0.625rem;
+  color: var(--sz-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
