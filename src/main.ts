@@ -15,6 +15,7 @@ import {
   scrollCommands$,
   type ZoomTransitionState,
 } from './ui/viewport';
+import { buildHeader, titlePid } from './ui/header';
 import { mountSlider } from './ui/slider';
 import { mountCaret } from './ui/caret';
 import { nextScale, SCALE_DEFAULT } from './ui/content-scale';
@@ -544,9 +545,14 @@ async function handleDocChanged(): Promise<void> {
       if (column) {
         const table = newResult.table;
         const index = currentIndex;
+        const skipPid = titlePid(table);
         prevGroups = reconcile(column, table, index, prevGroups, (sid) =>
-          buildGroup(table, index, sid),
+          buildGroup(table, index, sid, skipPid),
         );
+        // reconcile only manages `.pgroup` children; re-prepend a fresh header
+        // (its paragraph count may have changed on reload) as the column's head.
+        column.querySelector(':scope > .doc-header')?.remove();
+        column.insertBefore(buildHeader(table, 0), column.firstChild);
         remountCaret();
         remountFocusMask();
         mountSliderForState();

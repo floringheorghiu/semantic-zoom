@@ -10,6 +10,7 @@ import {
   type MapCtx,
 } from '../engine/anchor';
 import { selectZoom } from '../state/selectors';
+import { buildHeader, titlePid } from './header';
 
 /**
  * Static three-level renderer (§4.1). Swaps the freshly-built level layer in as
@@ -54,10 +55,16 @@ export function buildLevel(
   column.className = 'reading-column';
   layer.appendChild(column);
 
+  // Per-level header (title + subtitle) at the top of the reading content,
+  // scrolling with it (§4.2). Prepended for ALL three levels.
+  column.appendChild(buildHeader(table, level));
+
   if (level === 0) {
+    // The heading promoted to the doc title must not render again in the body.
+    const skipPid = titlePid(table);
     for (const sid of table.order.sections) {
       if (!table.sections[sid]) continue;
-      column.appendChild(buildGroup(table, _index, sid));
+      column.appendChild(buildGroup(table, _index, sid, skipPid));
     }
   } else if (level === -1) {
     for (const sid of table.order.sections) {
@@ -99,14 +106,26 @@ export function buildLevel(
  * hot-reload reconciler (Task 3.2, `reconcile` in state/reload.ts) can rebuild a
  * single changed group without re-implementing paragraph rendering — one source
  * of truth for what a group's DOM looks like.
+ *
+ * `skipPid` (optional) is the paragraph promoted to the document title
+ * (`titlePid`); when it falls in this group its `.pnode` is skipped so the
+ * heading isn't shown twice. This changes only the rendered DOM — NOT the
+ * group's reconcile key (which derives from `table.sections[sid].children`), so
+ * D7 keyed reuse is unaffected.
  */
-export function buildGroup(table: LookupTable, _index: ResolvedIndex, sid: string): HTMLElement {
+export function buildGroup(
+  table: LookupTable,
+  _index: ResolvedIndex,
+  sid: string,
+  skipPid?: string | null,
+): HTMLElement {
   const group = document.createElement('section');
   group.className = 'pgroup';
   group.dataset.sid = sid;
   const section = table.sections[sid];
   if (!section) return group;
   for (const pid of section.children) {
+    if (pid === skipPid) continue;
     const paragraph = table.paragraphs[pid];
     if (!paragraph) continue;
     const node = document.createElement('div');

@@ -28,6 +28,28 @@
   max-width: 54rem;          /* ~864px */
 }
 
+/* ---------- Per-level document header (§4.2) ---------- */
+
+/* Title + subtitle at the top of the reading content; scrolls with it. */
+.doc-header {
+  margin: 0 0 1.5rem;
+}
+
+.doc-title {
+  font-size: 1.9rem;
+  line-height: 1.15;
+  font-weight: 700;
+  color: var(--sz-ink);
+  text-wrap: balance;
+  margin: 0 0 0.35rem;
+}
+
+.doc-subtitle {
+  font-size: 0.9rem;
+  color: var(--sz-muted);
+  margin: 0;
+}
+
 /* ---------- Story / Section summary cards (Ask 3) ---------- */
 
 .meta-title {
