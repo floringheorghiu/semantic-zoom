@@ -46,9 +46,14 @@ body {
   user-select: none;
 }
 
+/* The plain #status text is kept in the DOM (main.ts still writes to it) but
+   hidden — the status-badge pill on the right is the visible affordance. */
 .toolbar .status {
-  font-size: 0.85rem;
-  opacity: 0.7;
+  display: none;
+}
+
+/* Push the status-badge pill to the right edge of the clean white bar. */
+.toolbar .status-badge {
   margin-left: auto;
 }
 

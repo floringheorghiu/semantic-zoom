@@ -451,8 +451,6 @@ window.addEventListener('DOMContentLoaded', () => {
   sliderEl = document.querySelector<HTMLElement>('#slider')!;
   statusEl = document.querySelector<HTMLElement>('#status')!;
 
-  document.querySelector('#open-file')?.addEventListener('click', () => void promptOpen());
-
   applyContentScale(); // seed --content-scale at 100%
 
   // Mount the non-modal status affordance once, into the toolbar. It is driven

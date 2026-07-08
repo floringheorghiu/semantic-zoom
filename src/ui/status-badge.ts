@@ -39,7 +39,8 @@ export function mountStatusBadge(root: HTMLElement): StatusBadgeHandle {
     gap: '8px',
     position: 'relative',
     zIndex: '5',
-    font: '12px/1.4 system-ui, -apple-system, sans-serif',
+    marginLeft: 'auto',
+    font: '12px/1.4 var(--sz-font)',
   } satisfies Partial<CSSStyleDeclaration>);
   root.appendChild(container);
 
@@ -66,10 +67,10 @@ export function mountStatusBadge(root: HTMLElement): StatusBadgeHandle {
       note.textContent = `⚠ Unreadable summary—showing raw text${detail}`;
       note.title = error ? `Could not read summaries: ${error}` : 'Could not read summaries';
       Object.assign(note.style, {
-        color: '#8a5a00',
-        background: '#fff4d6',
-        border: '1px solid #e6c35c',
-        borderRadius: '4px',
+        color: 'var(--sz-warn)',
+        background: 'color-mix(in srgb, var(--sz-warn) 12%, transparent)',
+        border: '1px solid var(--sz-warn)',
+        borderRadius: 'var(--sz-radius-pill)',
         padding: '2px 8px',
       } satisfies Partial<CSSStyleDeclaration>);
     } else if (status === 'untagged') {
@@ -78,10 +79,10 @@ export function mountStatusBadge(root: HTMLElement): StatusBadgeHandle {
       note.textContent = 'No summary layer';
       note.title = 'This document has no semantic summaries; showing raw text.';
       Object.assign(note.style, {
-        color: '#555',
+        color: 'var(--sz-muted)',
         background: 'transparent',
         border: '1px solid transparent',
-        borderRadius: '4px',
+        borderRadius: 'var(--sz-radius-pill)',
         padding: '2px 8px',
       } satisfies Partial<CSSStyleDeclaration>);
     } else {
@@ -105,14 +106,35 @@ export function mountStatusBadge(root: HTMLElement): StatusBadgeHandle {
       pill.dataset.pill = 'updated';
       pill.setAttribute('role', 'status');
       Object.assign(pill.style, {
-        color: '#0a5a2f',
-        background: '#dff3e6',
-        border: '1px solid #8fd3ab',
-        borderRadius: '999px',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '6px',
+        color: 'var(--sz-muted)',
+        background: 'var(--sz-track)',
+        border: '1px solid var(--sz-border)',
+        borderRadius: 'var(--sz-radius-pill)',
         padding: '2px 10px',
         transition: reduced ? 'none' : 'opacity 150ms ease',
         opacity: reduced ? '1' : '0',
       } satisfies Partial<CSSStyleDeclaration>);
+
+      // A small green status dot precedes the "Updated" text (Figma pill).
+      const dot = document.createElement('span');
+      dot.setAttribute('aria-hidden', 'true');
+      Object.assign(dot.style, {
+        width: '6px',
+        height: '6px',
+        borderRadius: 'var(--sz-radius-pill)',
+        background: 'var(--sz-ok)',
+        flex: '0 0 auto',
+      } satisfies Partial<CSSStyleDeclaration>);
+      pill.appendChild(dot);
+
+      // Keep the label in its own node so updating text never wipes the dot.
+      const label = document.createElement('span');
+      label.dataset.pillLabel = '';
+      pill.appendChild(label);
+
       container.appendChild(pill);
       if (!reduced) {
         // Next frame → fade in (instant when reduced motion is requested).
@@ -121,7 +143,8 @@ export function mountStatusBadge(root: HTMLElement): StatusBadgeHandle {
         });
       }
     }
-    pill.textContent = message;
+    const label = pill.querySelector<HTMLElement>('[data-pill-label]');
+    if (label) label.textContent = message;
 
     // Reset the dismissal window so the pill lives 1500ms past the LAST call.
     clearPillTimer();
