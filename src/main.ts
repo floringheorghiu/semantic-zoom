@@ -21,6 +21,15 @@ import { mountCaret } from './ui/caret';
 import { nextScale, SCALE_DEFAULT } from './ui/content-scale';
 import { mountFocusMask } from './ui/focus-mask';
 import { mountStatusBadge, type StatusBadgeHandle } from './ui/status-badge';
+import {
+  mountContentMap,
+  buildMapModel,
+  visibleIds,
+  indicatorOffset,
+  mapTrackHeight,
+  type ContentMapHandle,
+  type MapBox,
+} from './ui/content-map';
 import { reconcile, restoreCaret, groupKey } from './state/reload';
 
 // The store: main.ts is the only place (with state/) allowed to feed actions$.
@@ -35,6 +44,7 @@ import './styles/base.css';
 import './styles/scrubber.css';
 import './styles/focus-mask.css';
 import './styles/reading.css';
+import './styles/content-map.css';
 
 // --- session state (the RxJS store arrives in Task 2.1; direct wiring for now) ---
 let currentLevel: ZoomLevel = 0;
@@ -53,11 +63,15 @@ let focusMaskTeardown: (() => void) | null = null;
 let zoomTeardown: (() => void) | null = null;
 /** Non-modal status affordance (spec §2.6, §5.3): warning badge + "Updated" pill. */
 let statusBadge: StatusBadgeHandle | null = null;
+/** The content map sidebar (§4.9). Mounted once; driven by refreshMap/scroll. */
+let contentMap: ContentMapHandle | null = null;
+let contentMapTeardown: (() => void) | null = null;
 
 let viewportEl: HTMLElement;
 let scrubberEl: HTMLElement;
 let zoomContextEl: HTMLElement;
 let statusEl: HTMLElement;
+let contentMapEl: HTMLElement;
 
 /** Levels available given the current document. */
 function availableLevels(): ZoomLevel[] {
@@ -115,6 +129,128 @@ function getZoomState(): ZoomTransitionState | null {
   };
 }
 
+// --- Content map sidebar (§4.9) ---------------------------------------------
+//
+// The map is `#content-map`, a sibling of `#viewport` inside `.viewport-wrap`,
+// so `renderLevel`'s `replaceChildren(#viewport)` can never wipe it. main.ts
+// owns every crossing: it injects `onSelect`, rebuilds the model on doc/level/
+// scale change, and drives active + indicator from a rAF-throttled scroll read.
+
+/** Cached `.pgroup` boxes of the current layer; the scroll path never re-reads. */
+let mapBoxes: MapBox[] = [];
+/** Cached indicator travel distance; recomputed with the boxes, not per frame. */
+let mapTrackH = 0;
+/** Pending scroll-update frame, so bursts of scroll events coalesce into one. */
+let mapRaf = 0;
+
+/**
+ * The layer that owns scroll. `.level-layer` is `position:absolute; inset:0;
+ * overflow-y:auto` — it, not `#viewport`, is the scroll container. Mid-
+ * transition two layers are mounted; the entering one is appended last and is
+ * the one that survives, so take the last.
+ */
+function currentLayer(): HTMLElement | null {
+  const layers = viewportEl.querySelectorAll<HTMLElement>('.level-layer');
+  return layers.length ? layers[layers.length - 1] : null;
+}
+
+/**
+ * Scroll the current layer so the clicked group sits just below the top edge.
+ * The write goes through the single rAF `scrollCommands$` queue (spec §3.2) —
+ * `.scrollTop` is NEVER assigned here.
+ */
+function scrollToGroup(id: string): void {
+  const layer = currentLayer();
+  if (!layer) return;
+  const el = layer.querySelector<HTMLElement>(
+    `.pgroup[data-sid="${id}"], .pgroup[data-mid="${id}"]`,
+  );
+  if (!el) return;
+  const max = Math.max(0, layer.scrollHeight - layer.clientHeight);
+  const top = Math.min(Math.max(el.offsetTop - 24, 0), max);
+  scrollCommands$.next({ el: layer, top });
+}
+
+/**
+ * Cache the mounted group boxes (`offsetTop`/`offsetHeight`) and the indicator
+ * track height. Plain offset reads of an already-laid-out layer — the same
+ * cheap measurement `mountedBoxes` uses in the transition. Called once per
+ * render, never per scroll frame.
+ */
+function cacheMapBoxes(): void {
+  mapBoxes = [];
+  mapTrackH = 0;
+  const layer = currentLayer();
+  if (!layer) return;
+  for (const el of layer.querySelectorAll<HTMLElement>('.pgroup[data-sid], .pgroup[data-mid]')) {
+    const id = el.dataset.sid ?? el.dataset.mid;
+    if (!id) continue;
+    mapBoxes.push({ id, offsetTop: el.offsetTop, offsetHeight: el.offsetHeight });
+  }
+  mapTrackH = mapTrackHeight(contentMapEl);
+}
+
+/**
+ * Read the layer's scroll metrics, then write the map's active bars + indicator
+ * position. Strict read-then-write: the boxes and the track height come from
+ * the cache, so this touches layout exactly once (the three scroll reads).
+ */
+function updateMapFromScroll(): void {
+  const layer = currentLayer();
+  if (!contentMap || !layer) return;
+  const { scrollTop, scrollHeight, clientHeight } = layer; // READ
+  contentMap.setActive(visibleIds(mapBoxes, scrollTop, clientHeight)); // WRITE
+  contentMap.setIndicator(indicatorOffset(scrollTop, scrollHeight, clientHeight, mapTrackH));
+}
+
+/**
+ * Rebuild the map for the current document + level, re-cache the group boxes,
+ * and sync active/indicator once. Called after every render, after the zoom
+ * transition settles, and after a content-scale change (CSS `zoom` reflows the
+ * column, invalidating every cached offset). Hidden for non-native documents,
+ * which have no groups to map.
+ */
+function refreshMap(): void {
+  if (!contentMap) return;
+  if (!currentTable || !currentIndex) {
+    contentMapEl.hidden = true;
+    mapBoxes = [];
+    mapTrackH = 0;
+    return;
+  }
+  contentMapEl.hidden = false;
+  contentMap.render(buildMapModel(currentTable, currentIndex, currentLevel));
+  cacheMapBoxes();
+  updateMapFromScroll();
+}
+
+/** rAF-throttled scroll tracking: one frame per burst, regardless of event rate. */
+function onViewportScroll(): void {
+  if (mapRaf) return;
+  mapRaf = requestAnimationFrame(() => {
+    mapRaf = 0;
+    updateMapFromScroll();
+  });
+}
+
+/**
+ * Mount the map once. The listener is CAPTURE-phase on `#viewport`: scroll does
+ * not bubble, but it does propagate down the capture path from the window, so
+ * this single listener catches the `.level-layer`'s scroll across layer swaps.
+ */
+function mountContentMapOnce(): void {
+  contentMap = mountContentMap(contentMapEl, { onSelect: scrollToGroup });
+  viewportEl.addEventListener('scroll', onViewportScroll, true);
+  contentMapTeardown = () => {
+    viewportEl.removeEventListener('scroll', onViewportScroll, true);
+    if (mapRaf) cancelAnimationFrame(mapRaf);
+    mapRaf = 0;
+    contentMap?.teardown();
+    contentMap = null;
+  };
+  refreshMap();
+}
+
 /** Render the current document at `currentLevel` and sync the slider. */
 function renderCurrent(): void {
   viewportEl.dataset.zoom = String(currentLevel);
@@ -129,6 +265,7 @@ function renderCurrent(): void {
   remountCaret();
   remountFocusMask();
   mountScrubberForState();
+  refreshMap();
 }
 
 /**
@@ -222,6 +359,9 @@ let contentScale = SCALE_DEFAULT;
 
 function applyContentScale(): void {
   viewportEl.style.setProperty('--content-scale', String(contentScale));
+  // `zoom` reflows the reading column, so every cached `offsetTop`/`offsetHeight`
+  // in the map is now stale. Re-measure. (No-op before the map is mounted.)
+  refreshMap();
 }
 
 /** Scale the content larger (+1) or smaller (−1). */
@@ -280,6 +420,7 @@ function applyResult(result: LoadResultDTO): void {
       statusBadge?.setStatus('untagged');
     }
     mountScrubberForState();
+    refreshMap(); // no table → hides the map
   }
 }
 
@@ -474,6 +615,7 @@ window.addEventListener('DOMContentLoaded', () => {
   scrubberEl = document.querySelector<HTMLElement>('#scrubber')!;
   zoomContextEl = document.querySelector<HTMLElement>('#zoom-context')!;
   statusEl = document.querySelector<HTMLElement>('#status')!;
+  contentMapEl = document.querySelector<HTMLElement>('#content-map')!;
 
   applyContentScale(); // seed --content-scale at 100%
 
@@ -490,7 +632,16 @@ window.addEventListener('DOMContentLoaded', () => {
   zoomTeardown = mountZoomTransitions(viewportEl, getZoomState, () => {
     remountCaret();
     remountFocusMask();
+    // The FINAL layer is the one that survives: rebuild the map against it and
+    // re-measure the group boxes (a new level has entirely new offsets).
+    refreshMap();
   });
+
+  // The map sidebar (§4.9): mounted once, outside #viewport so `renderLevel`'s
+  // replaceChildren cannot destroy it. Click-to-scroll routes through
+  // scrollCommands$ (see scrollToGroup).
+  mountContentMapOnce();
+
   window.addEventListener('beforeunload', () => {
     zoomTeardown?.();
     zoomTeardown = null;
@@ -500,6 +651,8 @@ window.addEventListener('DOMContentLoaded', () => {
     focusMaskTeardown = null;
     statusBadge?.teardown();
     statusBadge = null;
+    contentMapTeardown?.();
+    contentMapTeardown = null;
   });
 
   void installMenu();
@@ -579,6 +732,7 @@ async function handleDocChanged(): Promise<void> {
         remountCaret();
         remountFocusMask();
         mountScrubberForState();
+        refreshMap(); // reconcile changed the groups → rebuild + re-measure
       } else {
         renderCurrent();
       }
@@ -626,6 +780,7 @@ async function handleDocChanged(): Promise<void> {
       statusBadge?.setStatus('untagged');
     }
     mountScrubberForState();
+    refreshMap(); // no table → hides the map
   }
 
   // (§5.3 step 6) A real (non-silent) reload was applied → the ONLY permitted

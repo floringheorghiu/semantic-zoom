@@ -12,7 +12,10 @@
       <div class="toolbar" data-tauri-drag-region>
         <span class="status" id="status">No document</span>
       </div>
-      <main id="viewport" data-zoom="0"></main>
+      <div class="viewport-wrap">
+        <main id="viewport" data-zoom="0"></main>
+        <aside id="content-map" aria-label="Content map" hidden></aside>
+      </div>
       <div id="zoom-footer">
         <div id="scrubber"></div>
         <span id="zoom-context"></span>

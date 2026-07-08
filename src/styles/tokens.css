@@ -17,6 +17,10 @@
   --sz-card-foot:     rgba(236, 236, 240, 0.10);
   --sz-track:         #eceef2;   /* zoom scrubber track */
 
+  /* content map (§4.9) */
+  --sz-map-bar:        #d5e0ff;  /* inactive group bar + separator dot */
+  --sz-map-bar-active: #8080ff;  /* group intersecting the viewport */
+
   /* accent + semantic */
   --sz-accent:        #2020fe;   /* milestone/active blue */
   --sz-accent-border: rgba(32, 32, 254, 0.50);
@@ -53,6 +57,10 @@
   --sz-card-head:     rgba(255, 255, 255, 0.03);
   --sz-card-foot:     rgba(255, 255, 255, 0.02);
   --sz-track:         #2a2a2e;
+
+  /* content map (§4.9): a dim indigo rail, a luminous active bar */
+  --sz-map-bar:        #39406b;
+  --sz-map-bar-active: #8f8fff;
 
   /* accent/semantic: lighter tints for dark surfaces */
   --sz-accent:        #8a9bff;
