@@ -115,6 +115,34 @@ All changes are in `src/ui/**`, `src/styles/**`, `index.html`, and the two `main
 ### 4.7 Raw code block + table — `reading.css`
 - Re-skin to light: code block light-grey surface, syntax via the existing token custom props; table keeps the Ask-4 padding/zebra/borders but on light (`--sz-hairline` zebra, `--sz-border` grid). Mostly value swaps.
 
+### 4.9 Content map sidebar (`location-in-document`) — NEW FEATURE
+Figma node `63:2287` → component `58:2135`. A VS-Code-minimap-style document map.
+
+**Spec (verbatim):** 32px-wide panel, `background:#fff`, `1px solid rgba(0,0,0,0.1)`, `border-radius:4px`, `box-shadow:0 1px 3px rgba(0,0,0,.1), 0 1px 2px -1px rgba(0,0,0,.1)`, `overflow:clip`, `display:flex; flex-direction:column; align-items:center; gap:6px; padding:5px`, positioned `left:12px` near the top of the content area.
+- **Bars** = one per group: `height:2px; width:100%; border-radius:7px`. Inactive `#d5e0ff`, **active `#8080ff`**.
+- **Separators (dots)** = `2×2px`, `#d5e0ff`, `border-radius:7px` — inserted at **milestone boundaries** (wherever `parentOfSection` changes). In the fixture this yields groups of 2/8/9/6 — matching the M1–M4 MetaCard section counts.
+- **`position-indicator`** = a thin horizontal line across the panel, positioned by `scrollTop / (scrollHeight − clientHeight)`.
+- Bars are clickable (cursor:pointer) → scroll the viewport to that group.
+- A `Button - Minimize` exists in the design — **deferred** (follow-up).
+
+**LOCKED semantics (2026-07-08):**
+- **Active (purple `#8080ff`) = every group currently INTERSECTING the viewport** (visible-range highlight, like a minimap). Explains the two adjacent purple bars in the mockup.
+- **Shown at all three levels.** Bars map to `order.sections` at k=0/−1 (with milestone separators) and to `order.meta` at k=−2 (no separators).
+- **Minimize deferred.**
+
+**Architecture constraints (must respect):**
+- `renderLevel` does `container.replaceChildren()` on `#viewport`, so the map CANNOT be a child of `#viewport` (it'd be wiped every render). Wrap the viewport: `.viewport-wrap { position:relative }` containing `#viewport` and `<aside id="content-map">`.
+- **Click-to-scroll writes must go through the single rAF `scrollCommands$` queue** (§3.2) — `main.ts` wires `onSelect(id)`; the map never writes scroll itself.
+- The **indicator moves via `transform: translateY()`** (compositor-safe, no CSS transition) — never animate `top`/layout. D1 (opacity-only) stays intact.
+- Scroll tracking: attach ONE listener on `#viewport` with `capture: true` (scroll doesn't bubble, but capture catches the `.level-layer`'s scroll), rAF-throttle, **read** metrics then **write** styles (read-then-write discipline).
+- **Cache group boxes** (`offsetTop`/`offsetHeight`) after each render; the scroll handler then reads only `scrollTop`/`clientHeight`. Recompute the cache on doc/level change **and on content-scale change** (`zoom` alters offsets).
+- Large docs: bars = groups (sections/milestones), not paragraphs, so counts stay modest. Shrink `gap` from 6px down to a 1px floor to fit the available height; if it still overflows, the panel scrolls internally.
+
+**Pure, unit-testable core (`src/ui/content-map.ts`):**
+- `buildMapModel(table, index, level): MapEntry[]` — `{kind:'bar', id}` | `{kind:'sep'}`.
+- `visibleIds(boxes, scrollTop, clientHeight): Set<string>` — the visible-range highlight.
+- `indicatorOffset(scrollTop, scrollHeight, clientHeight, trackH): number` — clamped.
+
 ### 4.8 Content-scale (already built) — keep
 - `content-scale.ts` + ⌘=/⌘-/⌘0 stay. Under D-B they also back the scrubber's `+1/+2`. The `--content-scale` var continues to drive `zoom` on `.reading-column`.
 
