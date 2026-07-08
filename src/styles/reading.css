@@ -1,6 +1,9 @@
 /* Reading column, Story cards, and raw-table legibility.
    Light-first (matches the Figma design); the dark palette is opt-in under
-   :root[data-theme="dark"]. All body/badge text is checked for ≥4.5:1 contrast. */
+   :root[data-theme="dark"]. All body text and badge LABELS clear ≥4.5:1 on white.
+   The Blocker label uses `--sz-warn-text` (#b35f00, 4.61:1); the exact Figma amber
+   `--sz-warn` (#d36f00, 3.49:1) is kept for the TICK — a graphic, which needs only
+   3:1 per WCAG 1.4.11. */
 
 /* ---------- Reading column (Ask 2): a centered, capped measure ---------- */
 
@@ -221,15 +224,25 @@
   background: rgba(0, 0, 0, 0.025);
 }
 
+/* `[tick] [ LABEL / body ]` — Figma MetaCard 36:718 / 36:748 (§4.5). */
 .summary-row {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 0.75rem;
-  align-items: start;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.summary-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .summary-text {
   margin: 0;
+  padding-top: 4px;
+  font-size: 12px;
+  line-height: 19.5px;
+  color: var(--sz-muted);
   text-wrap: pretty;
 }
 
@@ -241,27 +254,40 @@
   margin: 0 0 0.75rem;
 }
 
-/* ---------- Semantic badges: low-contrast, tinted, readable ---------- */
+/* ---------- Semantic badges: colored uppercase label + tick ---------- */
 
-.badge {
-  display: inline-block;
-  padding: 0.15rem 0.55rem;
-  border-radius: 999px;
-  font-size: 0.72rem;
-  font-weight: 600;
-  line-height: 1.4;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-  /* default (neutral) */
-  color: #4a5160;
-  background: rgba(90, 100, 120, 0.14);
+/* The 4×14px rounded bar left of the label. Colors mirror `.badge`; the 1px
+   nudge lines its top edge up with the label's cap height. */
+.badge-tick {
+  flex: 0 0 auto;
+  width: 4px;
+  height: 14px;
+  margin-top: 1px;
+  border-radius: 6px;
+  background: var(--sz-muted);        /* default (neutral) */
 }
 
-.badge[data-variant='covers']  { color: #1f5fd0; background: rgba(40, 100, 220, 0.13); }
-.badge[data-variant='done']    { color: #1c7a43; background: rgba(30, 150, 80, 0.14); }
-.badge[data-variant='blocker'] { color: #b23a24; background: rgba(210, 70, 40, 0.13); }
-.badge[data-variant='prereq']  { color: #6b3fd0; background: rgba(120, 70, 220, 0.13); }
-.badge[data-variant='next']    { color: #14827a; background: rgba(20, 160, 150, 0.14); }
+.badge-tick[data-variant='covers']  { background: var(--sz-accent); }
+.badge-tick[data-variant='done']    { background: var(--sz-ok); }
+.badge-tick[data-variant='blocker'] { background: var(--sz-warn); }
+.badge-tick[data-variant='prereq']  { background: var(--sz-accent); }
+.badge-tick[data-variant='next']    { background: var(--sz-info); }
+
+/* NOT a filled pill: bare uppercase type in the semantic color. */
+.badge {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 15px;
+  letter-spacing: 0.617px;
+  text-transform: uppercase;
+  color: var(--sz-muted);             /* default (neutral) */
+}
+
+.badge[data-variant='covers']  { color: var(--sz-accent); }
+.badge[data-variant='done']    { color: var(--sz-ok); }
+.badge[data-variant='blocker'] { color: var(--sz-warn-text); }
+.badge[data-variant='prereq']  { color: var(--sz-accent); }
+.badge[data-variant='next']    { color: var(--sz-info); }
 
 /* ---------- Raw-mode table legibility (Ask 4) ---------- */
 
@@ -323,11 +349,8 @@
   background: rgba(255, 255, 255, 0.035);
   border-color: rgba(128, 128, 128, 0.2);
 }
-:root[data-theme="dark"] .badge            { color: #c2c8d2; background: rgba(150, 160, 175, 0.16); }
-:root[data-theme="dark"] .badge[data-variant='covers']  { color: #8fbaff; background: rgba(90, 140, 255, 0.16); }
-:root[data-theme="dark"] .badge[data-variant='done']    { color: #74d78f; background: rgba(70, 190, 120, 0.16); }
-:root[data-theme="dark"] .badge[data-variant='blocker'] { color: #ff9d8c; background: rgba(255, 110, 90, 0.17); }
-:root[data-theme="dark"] .badge[data-variant='prereq']  { color: #c6a9ff; background: rgba(160, 120, 255, 0.16); }
-:root[data-theme="dark"] .badge[data-variant='next']    { color: #63d6cd; background: rgba(60, 200, 190, 0.16); }
+/* `.badge`/`.badge-tick` need no dark overrides — the semantic tokens
+   (`--sz-ok`/`--sz-warn`/`--sz-info`/`--sz-accent`/`--sz-muted`) already carry
+   their dark values. */
 :root[data-theme="dark"] .pnode thead th { background: rgba(128, 128, 128, 0.12); }
 :root[data-theme="dark"] .pnode tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.03); }

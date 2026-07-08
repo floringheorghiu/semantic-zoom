@@ -67,7 +67,9 @@ export function mountStatusBadge(root: HTMLElement): StatusBadgeHandle {
       note.textContent = `⚠ Unreadable summary—showing raw text${detail}`;
       note.title = error ? `Could not read summaries: ${error}` : 'Could not read summaries';
       Object.assign(note.style, {
-        color: 'var(--sz-warn)',
+        // Text uses the AA-safe amber (4.61:1); the tint/border may use the
+        // exact Figma amber, which is a non-text graphic (3:1 suffices).
+        color: 'var(--sz-warn-text)',
         background: 'color-mix(in srgb, var(--sz-warn) 12%, transparent)',
         border: '1px solid var(--sz-warn)',
         borderRadius: 'var(--sz-radius-pill)',

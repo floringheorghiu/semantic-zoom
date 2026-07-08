@@ -26,7 +26,11 @@
   --sz-accent-border: rgba(32, 32, 254, 0.50);
   --sz-ok:            #008236;   /* Accomplished */
   --sz-info:          #2f58bc;   /* Next Step */
-  --sz-warn:          #bb4d00;   /* Blocker */
+  --sz-warn:          #d36f00;   /* Blocker (Figma MetaCard 36:748) — GRAPHIC only */
+  /* The exact Figma amber is 3.49:1 on white — fine for a graphic (WCAG 1.4.11
+     non-text needs 3:1) but below 4.5:1 for the 12px bold Blocker LABEL. Text
+     uses this darkened amber (4.61:1), visually near-identical. */
+  --sz-warn-text:     #b35f00;
 
   /* type (D-C: system stack, no Inter bundling) */
   --sz-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -66,7 +70,8 @@
   --sz-accent:        #8a9bff;
   --sz-ok:            #5fd08c;
   --sz-info:          #7fb2ff;
-  --sz-warn:          #ff9d5c;
+  --sz-warn:          #ff9d5c;   /* dark tint of #d36f00 */
+  --sz-warn-text:     #ff9d5c;   /* on dark surfaces the tint already passes */
 
   color-scheme: dark;
 }

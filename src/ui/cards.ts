@@ -82,7 +82,7 @@ export function buildMetaCard(table: LookupTable, mid: string): HTMLElement {
 
   head.append(label, title);
 
-  // --- body: the existing summary rendering (badges restyled in step 6) ---
+  // --- body: the existing summary rendering (tick + uppercase label rows) ---
   const body = document.createElement('div');
   body.className = 'metacard-body';
   renderSummaryBody(body, meta.body);
@@ -178,19 +178,32 @@ export function renderSummaryBody(host: HTMLElement, body: string): void {
     const card = document.createElement('div');
     card.className = 'summary-card';
     for (const seg of segments) {
+      const variant = badgeVariant(seg.label);
+
       const row = document.createElement('div');
       row.className = 'summary-row';
 
+      // The 4×14px colored bar (Figma MetaCard 36:718) — decorative, so it is
+      // `aria-hidden`; the label beside it carries the meaning.
+      const tick = document.createElement('span');
+      tick.className = 'badge-tick';
+      tick.dataset.variant = variant;
+      tick.setAttribute('aria-hidden', 'true');
+
+      const col = document.createElement('div');
+      col.className = 'summary-col';
+
       const badge = document.createElement('span');
       badge.className = 'badge';
-      badge.dataset.variant = badgeVariant(seg.label);
+      badge.dataset.variant = variant;
       badge.textContent = seg.label;
 
       const text = document.createElement('p');
       text.className = 'summary-text';
       text.innerHTML = inlineFormat(seg.text);
 
-      row.append(badge, text);
+      col.append(badge, text);
+      row.append(tick, col);
       card.appendChild(row);
     }
     host.appendChild(card);
