@@ -1,6 +1,6 @@
 /* Reading column, Story cards, and raw-table legibility.
-   Dark-first (the app runs in a dark macOS window); light-mode overrides
-   follow each block. All body/badge text is checked for ≥4.5:1 contrast. */
+   Light-first (matches the Figma design); the dark palette is opt-in under
+   :root[data-theme="dark"]. All body/badge text is checked for ≥4.5:1 contrast. */
 
 /* ---------- Reading column (Ask 2): a centered, capped measure ---------- */
 
@@ -55,9 +55,9 @@
   flex-direction: column;
   gap: 0.85rem;
   padding: 1.15rem 1.25rem;
-  border: 1px solid rgba(128, 128, 128, 0.2);
+  border: 1px solid var(--sz-border);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.035);
+  background: rgba(0, 0, 0, 0.025);
 }
 
 .summary-row {
@@ -92,15 +92,15 @@
   letter-spacing: 0.01em;
   white-space: nowrap;
   /* default (neutral) */
-  color: #c2c8d2;
-  background: rgba(150, 160, 175, 0.16);
+  color: #4a5160;
+  background: rgba(90, 100, 120, 0.14);
 }
 
-.badge[data-variant='covers']  { color: #8fbaff; background: rgba(90, 140, 255, 0.16); }
-.badge[data-variant='done']    { color: #74d78f; background: rgba(70, 190, 120, 0.16); }
-.badge[data-variant='blocker'] { color: #ff9d8c; background: rgba(255, 110, 90, 0.17); }
-.badge[data-variant='prereq']  { color: #c6a9ff; background: rgba(160, 120, 255, 0.16); }
-.badge[data-variant='next']    { color: #63d6cd; background: rgba(60, 200, 190, 0.16); }
+.badge[data-variant='covers']  { color: #1f5fd0; background: rgba(40, 100, 220, 0.13); }
+.badge[data-variant='done']    { color: #1c7a43; background: rgba(30, 150, 80, 0.14); }
+.badge[data-variant='blocker'] { color: #b23a24; background: rgba(210, 70, 40, 0.13); }
+.badge[data-variant='prereq']  { color: #6b3fd0; background: rgba(120, 70, 220, 0.13); }
+.badge[data-variant='next']    { color: #14827a; background: rgba(20, 160, 150, 0.14); }
 
 /* ---------- Raw-mode table legibility (Ask 4) ---------- */
 
@@ -121,19 +121,19 @@
 .pnode th,
 .pnode td {
   padding: 0.75rem 1rem;                        /* generous cell padding */
-  border: 1px solid rgba(128, 128, 128, 0.22);
+  border: 1px solid var(--sz-border);
   text-align: left;
   vertical-align: top;
 }
 
 .pnode thead th {
-  background: rgba(128, 128, 128, 0.12);
+  background: rgba(0, 0, 0, 0.05);
   font-weight: 600;
 }
 
 /* Quiet zebra striping. */
 .pnode tbody tr:nth-child(even) {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(0, 0, 0, 0.03);
 }
 
 /* Narrow leading index/reference columns don't need to wrap. */
@@ -156,19 +156,17 @@
   font-size: 0.9em;
 }
 
-/* ---------- Light-mode overrides ---------- */
+/* ---------- Dark-mode overrides (opt-in via data-theme, D-A) ---------- */
 
-@media (prefers-color-scheme: light) {
-  .summary-card {
-    background: rgba(0, 0, 0, 0.025);
-    border-color: rgba(0, 0, 0, 0.12);
-  }
-  .badge            { color: #4a5160; background: rgba(90, 100, 120, 0.14); }
-  .badge[data-variant='covers']  { color: #1f5fd0; background: rgba(40, 100, 220, 0.13); }
-  .badge[data-variant='done']    { color: #1c7a43; background: rgba(30, 150, 80, 0.14); }
-  .badge[data-variant='blocker'] { color: #b23a24; background: rgba(210, 70, 40, 0.13); }
-  .badge[data-variant='prereq']  { color: #6b3fd0; background: rgba(120, 70, 220, 0.13); }
-  .badge[data-variant='next']    { color: #14827a; background: rgba(20, 160, 150, 0.14); }
-  .pnode thead th { background: rgba(0, 0, 0, 0.05); }
-  .pnode tbody tr:nth-child(even) { background: rgba(0, 0, 0, 0.03); }
+:root[data-theme="dark"] .summary-card {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: rgba(128, 128, 128, 0.2);
 }
+:root[data-theme="dark"] .badge            { color: #c2c8d2; background: rgba(150, 160, 175, 0.16); }
+:root[data-theme="dark"] .badge[data-variant='covers']  { color: #8fbaff; background: rgba(90, 140, 255, 0.16); }
+:root[data-theme="dark"] .badge[data-variant='done']    { color: #74d78f; background: rgba(70, 190, 120, 0.16); }
+:root[data-theme="dark"] .badge[data-variant='blocker'] { color: #ff9d8c; background: rgba(255, 110, 90, 0.17); }
+:root[data-theme="dark"] .badge[data-variant='prereq']  { color: #c6a9ff; background: rgba(160, 120, 255, 0.16); }
+:root[data-theme="dark"] .badge[data-variant='next']    { color: #63d6cd; background: rgba(60, 200, 190, 0.16); }
+:root[data-theme="dark"] .pnode thead th { background: rgba(128, 128, 128, 0.12); }
+:root[data-theme="dark"] .pnode tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.03); }

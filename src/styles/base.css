@@ -1,5 +1,5 @@
 :root {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--sz-font);
   font-size: 15px;
   line-height: 1.55;
 }
@@ -14,10 +14,18 @@ body {
   height: 100%;
 }
 
+/* Explicit light surface (via tokens) so the app renders light regardless of
+   the OS appearance; dark is opt-in via :root[data-theme="dark"]. */
+body {
+  background: var(--sz-bg);
+  color: var(--sz-ink);
+}
+
 #app {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  background: var(--sz-bg);
 }
 
 .toolbar {
@@ -29,7 +37,7 @@ body {
      under the window buttons and is unclickable. */
   padding: 0.5rem 0.75rem 0.5rem 82px;
   min-height: 44px;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+  border-bottom: 1px solid var(--sz-border);
   flex: 0 0 auto;
   /* The bar carries data-tauri-drag-region so the window can be dragged by
      it; Tauri excludes interactive child controls automatically (it checks
@@ -62,6 +70,6 @@ body {
 .pnode pre {
   overflow-x: auto;
   padding: 0.75rem;
-  background: rgba(128, 128, 128, 0.12);
+  background: var(--sz-track);
   border-radius: 6px;
 }

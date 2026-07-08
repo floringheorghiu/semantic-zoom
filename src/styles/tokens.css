@@ -1,0 +1,64 @@
+/* Design-token layer (plan §3). Light values are the DEFAULT (`:root`) to
+   match the Figma design; the dark palette is an opt-in mapping keyed off
+   `:root[data-theme="dark"]`. This sheet OWNS `color-scheme` (base/reading/
+   focus-mask now consume these vars instead of following prefers-color-scheme).
+   Imported FIRST in main.ts so the vars are defined before other sheets load. */
+
+:root {
+  /* surface / ink */
+  --sz-bg:            #ffffff;   /* window content */
+  --sz-ink:           #0a0a0a;   /* primary text */
+  --sz-muted:         #717182;   /* secondary text, body copy in cards */
+  --sz-muted-30:      rgba(113, 113, 130, 0.30);
+  --sz-muted-50:      rgba(113, 113, 130, 0.50);
+  --sz-border:        rgba(0, 0, 0, 0.10);
+  --sz-hairline:      rgba(0, 0, 0, 0.04);
+  --sz-card-head:     rgba(236, 236, 240, 0.20);
+  --sz-card-foot:     rgba(236, 236, 240, 0.10);
+  --sz-track:         #eceef2;   /* zoom scrubber track */
+
+  /* accent + semantic */
+  --sz-accent:        #2020fe;   /* milestone/active blue */
+  --sz-accent-border: rgba(32, 32, 254, 0.50);
+  --sz-ok:            #008236;   /* Accomplished */
+  --sz-info:          #2f58bc;   /* Next Step */
+  --sz-warn:          #bb4d00;   /* Blocker */
+
+  /* type (D-C: system stack, no Inter bundling) */
+  --sz-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --sz-mono: 'Menlo', ui-monospace, SFMono-Regular, monospace;
+
+  /* radii / shadow */
+  --sz-radius-card: 14px;
+  --sz-radius-pill: 999px;
+  --sz-shadow-pill: 0 1px 1.5px rgba(0, 0, 0, 0.1), 0 1px 1px rgba(0, 0, 0, 0.1);
+
+  /* focus-mask dimmed-token fallbacks (moved from focus-mask.css) */
+  --dim-fg:       #8a8f98;
+  --dim-fg-faint: #a6abb3;
+
+  color-scheme: light;
+}
+
+/* Dark mapping (D-A) — opt-in via data-theme, NOT prefers-color-scheme. Surface/
+   ink/track override; accent + semantic use lighter tints for dark surfaces.
+   The exact dark palette is refined in a later step; this establishes the
+   mechanism. */
+:root[data-theme="dark"] {
+  --sz-bg:            #1e1e1e;
+  --sz-ink:           #e8e8ea;
+  --sz-muted:         #a0a3ad;
+  --sz-border:        rgba(255, 255, 255, 0.12);
+  --sz-hairline:      rgba(255, 255, 255, 0.05);
+  --sz-card-head:     rgba(255, 255, 255, 0.03);
+  --sz-card-foot:     rgba(255, 255, 255, 0.02);
+  --sz-track:         #2a2a2e;
+
+  /* accent/semantic: lighter tints for dark surfaces */
+  --sz-accent:        #8a9bff;
+  --sz-ok:            #5fd08c;
+  --sz-info:          #7fb2ff;
+  --sz-warn:          #ff9d5c;
+
+  color-scheme: dark;
+}

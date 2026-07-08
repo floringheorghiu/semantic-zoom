@@ -55,11 +55,7 @@
 .level-layer[data-leaving]  { opacity: 0; }
 
 /* ---------- Tokens ---------- */
-:root {
-  --dim-fg: #8a8f98;
-  --dim-fg-faint: #a6abb3;
-  color-scheme: light dark;
-}
+/* --dim-fg / --dim-fg-faint and color-scheme now live in tokens.css. */
 
 @media (prefers-reduced-motion: reduce) {
   .pgroup, .level-layer { transition: none; }

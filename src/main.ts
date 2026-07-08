@@ -29,6 +29,7 @@ import { caretPlaced, docLoaded, zoomSet } from './state/actions';
 import { selectCaret } from './state/selectors';
 import type { Subscription } from 'rxjs';
 
+import './styles/tokens.css';
 import './styles/base.css';
 import './styles/slider.css';
 import './styles/focus-mask.css';
