@@ -50,14 +50,148 @@
   margin: 0;
 }
 
-/* ---------- Story / Section summary cards (Ask 3) ---------- */
+/* ---------- Story MetaCard (§4.4, Figma node 36:718) ----------
 
-.meta-title {
-  font-size: 1.5rem;
-  line-height: 1.25;
-  text-wrap: balance;
-  margin: 0 0 1rem;
+   LAYOUT INVARIANT: nothing in this block may set `position` on `.metacard`,
+   `.pgroup`, or `.reading-column`. `.level-layer` (position:absolute, see
+   focus-mask.css) must remain the offsetParent of every `.pnode` — the anchor
+   engine, the zoom transition and the content map all read `offsetTop` against
+   it. `overflow: clip` is safe; it establishes no containing block. */
+
+.metacard {
+  background: var(--sz-bg);
+  border: 1px solid var(--sz-border);
+  border-radius: var(--sz-radius-card);
+  overflow: clip;
 }
+
+.metacard-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 12px 16px;
+  background: var(--sz-card-head);
+  border-bottom: 1px solid var(--sz-border);
+}
+
+.metacard-label {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--sz-accent);
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+}
+
+.metacard-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--sz-accent);
+  letter-spacing: -0.15px;
+  text-wrap: balance;
+}
+
+.metacard-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px;
+}
+
+.metacard-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: var(--sz-card-foot);
+  border-top: 1px solid var(--sz-border);
+}
+
+.metacard-count {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--sz-muted);
+}
+
+/* The flexible rule between the count and the id range. */
+.metacard-rule {
+  flex: 1;
+  height: 1px;
+  background: var(--sz-hairline);
+}
+
+.metacard-ids {
+  font-family: var(--sz-mono);
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--sz-muted-50);
+  white-space: nowrap;
+}
+
+/* The card already carries its own padding — drop the inner summary card's
+   frame so the body reads as one surface. */
+.metacard-body > .summary-card {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+/* ---------- Section milestone divider (k=−1, §4.4) ---------- */
+
+/* Not a `.pgroup`: chrome announcing the first section of each milestone. */
+.milestone-divider {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding-bottom: 8px;
+  margin: 2rem 0 1.25rem;
+  border-bottom: 1px solid var(--sz-border);
+}
+
+.milestone-divider:first-child,
+.doc-header + .milestone-divider {
+  margin-top: 0;
+}
+
+.milestone-label {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--sz-accent);
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+}
+
+.milestone-title {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--sz-accent);
+  letter-spacing: -0.15px;
+}
+
+/* A divider directly after a group needs no extra group margin on top of its
+   own; the group→divider gap is the divider's margin-top. */
+.pgroup + .milestone-divider {
+  margin-top: 2rem;
+}
+
+/* ---------- S-id label (k=0 / k=−1, §4.4) ---------- */
+
+/* Normal flow, right-aligned text — NEVER `position: absolute`, which would
+   force a positioned `.pgroup` and rebase every `.pnode.offsetTop`. */
+.sid-label {
+  font-family: var(--sz-mono);
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--sz-muted-50);
+  text-align: right;
+  margin-bottom: 0.35rem;
+}
+
+/* ---------- Story / Section summary cards (Ask 3) ---------- */
 
 .summary-title {
   font-size: 1.15rem;
@@ -68,6 +202,11 @@
 
 .pgroup + .pgroup {
   margin-top: 2rem;
+}
+
+/* Story cards sit a little closer than bare section blocks. */
+.level-layer[data-level='-2'] .metacard + .metacard {
+  margin-top: 1.25rem;
 }
 
 /* One flat card per block — no nesting. Groups the labeled rows so the

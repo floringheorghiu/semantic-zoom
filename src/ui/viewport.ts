@@ -12,6 +12,17 @@ import {
 } from '../engine/anchor';
 import { selectZoom } from '../state/selectors';
 import { buildHeader, titlePid } from './header';
+import {
+  buildMetaCard,
+  buildMilestoneDivider,
+  buildSidLabel,
+  renderSummaryBody,
+} from './cards';
+
+// `renderSummaryBody` moved to ./cards (the card builders need it, and importing
+// it back from here would be a cycle). Re-exported so existing importers — and
+// summary.test.ts — keep their `from './viewport'` path.
+export { renderSummaryBody };
 
 /**
  * Static three-level renderer (§4.1). Swaps the freshly-built level layer in as
@@ -40,10 +51,16 @@ export function renderLevel(
  *
  * Iterate `table.order.*` arrays — NEVER `Object.keys` (spec §2.2 rule): the
  * order arrays are the document-order contract; object key order is not.
+ *
+ * Card chrome (§4.4) is delegated to `./cards`: k=−2 is a `MetaCard` per meta
+ * node, k=−1 is plain section blocks with a milestone divider before the first
+ * section of each milestone. Everything stays in normal flow — no `.pgroup`
+ * ancestor is ever positioned, so `.pnode.offsetTop` keeps resolving against
+ * `.level-layer` for the anchor engine.
  */
 export function buildLevel(
   table: LookupTable,
-  _index: ResolvedIndex,
+  index: ResolvedIndex,
   level: ZoomLevel,
 ): HTMLElement {
   const layer = document.createElement('div');
@@ -65,15 +82,26 @@ export function buildLevel(
     const skipPid = titlePid(table);
     for (const sid of table.order.sections) {
       if (!table.sections[sid]) continue;
-      column.appendChild(buildGroup(table, _index, sid, skipPid));
+      column.appendChild(buildGroup(table, index, sid, skipPid));
     }
   } else if (level === -1) {
+    // No per-section cards here (§4.4) — a milestone divider announces each new
+    // milestone, then its sections render as plain blocks.
+    let prevMid: string | undefined;
     for (const sid of table.order.sections) {
       const section = table.sections[sid];
       if (!section) continue;
+
+      const mid = index.parentOfSection.get(sid);
+      if (mid !== undefined && mid !== prevMid && table.meta[mid]) {
+        column.appendChild(buildMilestoneDivider(table, mid));
+      }
+      prevMid = mid;
+
       const group = document.createElement('section');
       group.className = 'pgroup';
       group.dataset.sid = sid;
+      group.appendChild(buildSidLabel(sid));
       const title = document.createElement('h2');
       title.className = 'summary-title';
       title.textContent = section.title;
@@ -82,19 +110,10 @@ export function buildLevel(
       column.appendChild(group);
     }
   } else {
-    // level === -2 (Story)
+    // level === -2 (Story): one MetaCard per meta node; the card IS the .pgroup.
     for (const mid of table.order.meta) {
-      const meta = table.meta[mid];
-      if (!meta) continue;
-      const group = document.createElement('section');
-      group.className = 'pgroup';
-      group.dataset.mid = mid;
-      const title = document.createElement('h1');
-      title.className = 'meta-title';
-      title.textContent = meta.title;
-      group.appendChild(title);
-      renderSummaryBody(group, meta.body);
-      column.appendChild(group);
+      if (!table.meta[mid]) continue;
+      column.appendChild(buildMetaCard(table, mid));
     }
   }
 
@@ -123,6 +142,10 @@ export function buildGroup(
   const group = document.createElement('section');
   group.className = 'pgroup';
   group.dataset.sid = sid;
+  // Normal-flow, right-aligned S-id (§4.4). Prepended rather than absolutely
+  // placed: `.pgroup` must stay unpositioned so `.pnode.offsetTop` keeps
+  // resolving against `.level-layer` (anchor engine + content map).
+  group.appendChild(buildSidLabel(sid));
   const section = table.sections[sid];
   if (!section) return group;
   for (const pid of section.children) {
@@ -434,89 +457,3 @@ export function mountZoomTransitions(
   return () => sub.unsubscribe();
 }
 
-// --- Summary body rendering (Story / Section prose) -------------------------
-
-interface LabeledSegment {
-  label: string;
-  text: string;
-}
-
-/** A block like `**Next step:** read the table` → { label, text }. */
-const LABEL_RE = /^\*\*(.+?):\*\*\s*([\s\S]*)$/;
-
-/**
- * Render a summary body. When the body is a set of `**Label:** value`
- * blocks (the Story/Section convention), render them as a card of
- * badge-tagged rows so the labels stop reading as a wall of bold text
- * (Ask 3). Otherwise render plain prose paragraphs with inline emphasis.
- */
-export function renderSummaryBody(host: HTMLElement, body: string): void {
-  const blocks = body.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
-  const segments: LabeledSegment[] = [];
-  let allLabeled = blocks.length > 0;
-
-  for (const block of blocks) {
-    const m = LABEL_RE.exec(block);
-    if (m) {
-      segments.push({ label: m[1].trim(), text: m[2].trim() });
-    } else {
-      allLabeled = false;
-    }
-  }
-
-  if (allLabeled) {
-    const card = document.createElement('div');
-    card.className = 'summary-card';
-    for (const seg of segments) {
-      const row = document.createElement('div');
-      row.className = 'summary-row';
-
-      const badge = document.createElement('span');
-      badge.className = 'badge';
-      badge.dataset.variant = badgeVariant(seg.label);
-      badge.textContent = seg.label;
-
-      const text = document.createElement('p');
-      text.className = 'summary-text';
-      text.innerHTML = inlineFormat(seg.text);
-
-      row.append(badge, text);
-      card.appendChild(row);
-    }
-    host.appendChild(card);
-    return;
-  }
-
-  const prose = document.createElement('div');
-  prose.className = 'summary-body';
-  for (const block of blocks) {
-    const p = document.createElement('p');
-    p.innerHTML = inlineFormat(block);
-    prose.appendChild(p);
-  }
-  // Empty body → still emit an empty container so callers/tests are stable.
-  if (blocks.length === 0) prose.textContent = body;
-  host.appendChild(prose);
-}
-
-/** Map a label to a semantic badge variant (used for its color). */
-function badgeVariant(label: string): string {
-  const l = label.toLowerCase();
-  if (/(cover|overview|summary|about)/.test(l)) return 'covers';
-  if (/(accomplish|done|shipped|complete)/.test(l)) return 'done';
-  if (/(block|risk|caveat|warning|issue)/.test(l)) return 'blocker';
-  if (/(prereq|prerequisite|dependenc|require)/.test(l)) return 'prereq';
-  if (/(next|todo|upcoming|follow)/.test(l)) return 'next';
-  return 'default';
-}
-
-/** Escape HTML, then render `**bold**` and `` `code` `` inline. */
-function inlineFormat(text: string): string {
-  const escaped = text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-  return escaped
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/`([^`]+?)`/g, '<code>$1</code>');
-}
