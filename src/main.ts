@@ -16,7 +16,7 @@ import {
   type ZoomTransitionState,
 } from './ui/viewport';
 import { buildHeader, titlePid } from './ui/header';
-import { mountSlider } from './ui/slider';
+import { mountZoomScrubber } from './ui/zoom-scrubber';
 import { mountCaret } from './ui/caret';
 import { nextScale, SCALE_DEFAULT } from './ui/content-scale';
 import { mountFocusMask } from './ui/focus-mask';
@@ -32,7 +32,7 @@ import type { Subscription } from 'rxjs';
 
 import './styles/tokens.css';
 import './styles/base.css';
-import './styles/slider.css';
+import './styles/scrubber.css';
 import './styles/focus-mask.css';
 import './styles/reading.css';
 
@@ -47,7 +47,7 @@ let currentPath: string | null = null;
 let prevGroups = new Map<string, HTMLElement>();
 /** True only when Engine-A summaries exist (native docs). Gates −1/−2. */
 let summariesAvailable = false;
-let sliderTeardown: (() => void) | null = null;
+let scrubberTeardown: (() => void) | null = null;
 let caretTeardown: (() => void) | null = null;
 let focusMaskTeardown: (() => void) | null = null;
 let zoomTeardown: (() => void) | null = null;
@@ -55,7 +55,8 @@ let zoomTeardown: (() => void) | null = null;
 let statusBadge: StatusBadgeHandle | null = null;
 
 let viewportEl: HTMLElement;
-let sliderEl: HTMLElement;
+let scrubberEl: HTMLElement;
+let zoomContextEl: HTMLElement;
 let statusEl: HTMLElement;
 
 /** Levels available given the current document. */
@@ -63,16 +64,37 @@ function availableLevels(): ZoomLevel[] {
   return summariesAvailable ? [0, -1, -2] : [0];
 }
 
-/** (Re)mount the slider reflecting the active level and disabled detents. */
-function mountSliderForState(): void {
-  sliderTeardown?.();
+/** (Re)mount the scrubber reflecting the active level and disabled segments,
+    and refresh the per-level context count beside it. */
+function mountScrubberForState(): void {
+  scrubberTeardown?.();
   const available = availableLevels();
   const disabledLevels = ([0, -1, -2] as ZoomLevel[]).filter((l) => !available.includes(l));
-  sliderTeardown = mountSlider(sliderEl, {
+  scrubberTeardown = mountZoomScrubber(scrubberEl, {
     onChange: requestLevel,
     disabledLevels,
     active: currentLevel,
   });
+  updateZoomContext();
+}
+
+/**
+ * Update the bottom-right context count for the CURRENT level, drawn from
+ * `currentTable.order`: −2 → `${M} milestones`, −1 → `${S} sections`,
+ * 0 → `${P} paragraphs`. Empty when no native document is open.
+ */
+function updateZoomContext(): void {
+  if (!currentTable) {
+    zoomContextEl.textContent = '';
+    return;
+  }
+  const P = currentTable.order.paragraphs.length;
+  const S = currentTable.order.sections.length;
+  const M = currentTable.order.meta.length;
+  const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  if (currentLevel === -2) zoomContextEl.textContent = plural(M, 'milestone');
+  else if (currentLevel === -1) zoomContextEl.textContent = plural(S, 'section');
+  else zoomContextEl.textContent = plural(P, 'paragraph');
 }
 
 /**
@@ -106,7 +128,7 @@ function renderCurrent(): void {
   prevGroups = seedGroups();
   remountCaret();
   remountFocusMask();
-  mountSliderForState();
+  mountScrubberForState();
 }
 
 /**
@@ -183,7 +205,7 @@ function requestLevel(level: ZoomLevel): void {
   actions$.next(zoomSet(level)); // frame n mounts the entering layer synchronously
   currentLevel = level;
   viewportEl.dataset.zoom = String(level);
-  mountSliderForState();
+  mountScrubberForState();
 }
 
 /** Step zoom: +1 = zoom in (toward raw/0), −1 = zoom out (toward story/−2). */
@@ -257,7 +279,7 @@ function applyResult(result: LoadResultDTO): void {
     } else {
       statusBadge?.setStatus('untagged');
     }
-    mountSliderForState();
+    mountScrubberForState();
   }
 }
 
@@ -449,7 +471,8 @@ function installDevHud(): void {
 
 window.addEventListener('DOMContentLoaded', () => {
   viewportEl = document.querySelector<HTMLElement>('#viewport')!;
-  sliderEl = document.querySelector<HTMLElement>('#slider')!;
+  scrubberEl = document.querySelector<HTMLElement>('#scrubber')!;
+  zoomContextEl = document.querySelector<HTMLElement>('#zoom-context')!;
   statusEl = document.querySelector<HTMLElement>('#status')!;
 
   applyContentScale(); // seed --content-scale at 100%
@@ -555,7 +578,7 @@ async function handleDocChanged(): Promise<void> {
         column.insertBefore(buildHeader(table, 0), column.firstChild);
         remountCaret();
         remountFocusMask();
-        mountSliderForState();
+        mountScrubberForState();
       } else {
         renderCurrent();
       }
@@ -602,7 +625,7 @@ async function handleDocChanged(): Promise<void> {
     } else {
       statusBadge?.setStatus('untagged');
     }
-    mountSliderForState();
+    mountScrubberForState();
   }
 
   // (§5.3 step 6) A real (non-silent) reload was applied → the ONLY permitted

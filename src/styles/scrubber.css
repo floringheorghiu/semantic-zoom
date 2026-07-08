@@ -1,0 +1,103 @@
+/* Bottom zoom scrubber (plan §4.3). A fully-rounded segmented pill floating in
+   a bottom footer bar: round −/+ end buttons flank five segments −2 −1 0 +1 +2.
+   Tokens only. The disabled +1/+2 cells are a visible affordance for future
+   content-magnify (D-B) and are never wired. */
+
+/* Footer bar sits in the app column flow BELOW #viewport, so it never occludes
+   the reading area — the viewport simply shrinks to make room. */
+#zoom-footer {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem;
+  border-top: 1px solid var(--sz-border);
+  background: var(--sz-bg);
+}
+
+/* Scrubber centered in the middle grid column. */
+#scrubber {
+  grid-column: 2;
+  justify-self: center;
+}
+
+/* Context count pinned right, muted. */
+#zoom-context {
+  grid-column: 3;
+  justify-self: end;
+  font: 500 12px/1 var(--sz-font);
+  color: var(--sz-muted);
+  white-space: nowrap;
+}
+
+.zoom-scrubber {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px;
+  background: var(--sz-track);
+  border: 1px solid var(--sz-border);
+  border-radius: var(--sz-radius-pill);
+  box-shadow: var(--sz-shadow-pill);
+}
+
+/* Round − / + end buttons. */
+.zoom-scrubber .scrubber-end {
+  appearance: none;
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: var(--sz-radius-pill);
+  background: transparent;
+  color: var(--sz-ink);
+  cursor: pointer;
+}
+
+.zoom-scrubber .scrubber-end:hover:not([data-disabled]) {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.zoom-scrubber .scrubber-end[data-disabled] {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* Segments. */
+.zoom-scrubber .scrubber-segment {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font: 500 12px/1 var(--sz-font);
+  color: var(--sz-muted);
+  padding: 6px 16px;
+  border-radius: var(--sz-radius-pill);
+  cursor: pointer;
+}
+
+.zoom-scrubber .scrubber-segment:hover:not([data-disabled]):not([data-active]) {
+  color: var(--sz-ink);
+}
+
+.zoom-scrubber .scrubber-segment[data-active] {
+  background: #fff;
+  color: var(--sz-ink);
+  box-shadow: var(--sz-shadow-pill);
+}
+
+.zoom-scrubber .scrubber-segment[data-disabled] {
+  color: var(--sz-muted-30);
+  cursor: default;
+}
+
+:root[data-theme="dark"] .zoom-scrubber .scrubber-segment[data-active] {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+:root[data-theme="dark"] .zoom-scrubber .scrubber-end:hover:not([data-disabled]) {
+  background: rgba(255, 255, 255, 0.08);
+}
