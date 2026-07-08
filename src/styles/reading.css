@@ -134,8 +134,11 @@
 }
 
 /* The card already carries its own padding — drop the inner summary card's
-   frame so the body reads as one surface. */
-.metacard-body > .summary-card {
+   frame so the body reads as one surface. The same applies at k=−1, where the
+   `.pgroup` itself is the frame (§4.6): a labeled section body must not draw a
+   second, nested card inside the accent border. Nested cards are always wrong. */
+.metacard-body > .summary-card,
+.level-layer[data-level='-1'] .pgroup > .summary-card {
   padding: 0;
   border: 0;
   background: none;
@@ -205,6 +208,34 @@
 
 .pgroup + .pgroup {
   margin-top: 2rem;
+}
+
+/* ---------- Active group: the accent border (§4.6) ----------
+
+   Which group is "active" is decided in main.ts by spec §2.5's anchor rule 2 —
+   the group nearest the viewport centre — and stamped as `data-active` from the
+   content map's existing rAF scroll handler. focus-mask.ts is untouched: it owns
+   `[data-dimmed]` (the opacity fade of the OTHERS) and nothing else.
+
+   NO LAYOUT SHIFT: the k=0 / k=−1 groups carry a 1px TRANSPARENT border and
+   their padding unconditionally, so activating one changes `border-color` and
+   nothing else — the border box is byte-identical either way. Every `.pnode`
+   offset the anchor engine and the content map cached stays valid. `.metacard`
+   already draws a 1px border, so it only needs the color.
+
+   D1: this is an INSTANT attribute swap. Never transition `border-color` — the
+   only animated property anywhere in the reading column is `opacity`. */
+
+.level-layer[data-level='0'] .pgroup,
+.level-layer[data-level='-1'] .pgroup {
+  border: 1px solid transparent;
+  border-radius: var(--sz-radius-card);
+  padding: 0.85rem 1rem;
+}
+
+.pgroup[data-active],
+.metacard[data-active] {
+  border-color: var(--sz-accent-border);
 }
 
 /* Story cards sit a little closer than bare section blocks. */
@@ -289,6 +320,18 @@
 .badge[data-variant='prereq']  { color: var(--sz-accent); }
 .badge[data-variant='next']    { color: var(--sz-info); }
 
+/* ---------- Raw-mode code block (§4.7) ---------- */
+
+/* Light surface + hairline frame, matching the Figma `Level0View` (36:109).
+   Both values are tokens, so the dark mapping follows for free. */
+.pnode pre {
+  overflow-x: auto;
+  padding: 0.75rem;
+  background: var(--sz-track);
+  border: 1px solid var(--sz-border);
+  border-radius: 6px;
+}
+
 /* ---------- Raw-mode table legibility (Ask 4) ---------- */
 
 .table-scroll {
@@ -314,13 +357,13 @@
 }
 
 .pnode thead th {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--sz-table-head);
   font-weight: 600;
 }
 
 /* Quiet zebra striping. */
 .pnode tbody tr:nth-child(even) {
-  background: rgba(0, 0, 0, 0.03);
+  background: var(--sz-hairline);
 }
 
 /* Narrow leading index/reference columns don't need to wrap. */
@@ -329,17 +372,12 @@
   white-space: nowrap;
 }
 
-.pnode :not(pre) > code {
-  padding: 0.1em 0.35em;
-  border-radius: 5px;
-  background: rgba(128, 128, 128, 0.16);
-  font-size: 0.9em;
-}
-
+/* Inline `code`: a subtle token tint (the code BLOCK is skinned above). */
+.pnode :not(pre) > code,
 .summary-text code {
   padding: 0.1em 0.35em;
   border-radius: 5px;
-  background: rgba(128, 128, 128, 0.16);
+  background: var(--sz-code-tint);
   font-size: 0.9em;
 }
 
@@ -351,6 +389,6 @@
 }
 /* `.badge`/`.badge-tick` need no dark overrides — the semantic tokens
    (`--sz-ok`/`--sz-warn`/`--sz-info`/`--sz-accent`/`--sz-muted`) already carry
-   their dark values. */
-:root[data-theme="dark"] .pnode thead th { background: rgba(128, 128, 128, 0.12); }
-:root[data-theme="dark"] .pnode tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.03); }
+   their dark values. Same now for the table + code block: `--sz-table-head`,
+   `--sz-hairline`, `--sz-track`, `--sz-border` and `--sz-code-tint` all remap
+   under `[data-theme="dark"]`, so their rules need no override here. */

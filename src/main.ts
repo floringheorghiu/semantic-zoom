@@ -7,6 +7,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { Menu, Submenu, MenuItem, PredefinedMenuItem } from '@tauri-apps/api/menu';
 
 import { buildIndex, type ZoomLevel, type LookupTable, type ResolvedIndex } from './engine/schema';
+import { resolveAnchor } from './engine/anchor';
 import type { LoadResultDTO } from './engine/engine-a';
 import {
   renderLevel,
@@ -20,6 +21,7 @@ import { mountZoomScrubber } from './ui/zoom-scrubber';
 import { mountCaret } from './ui/caret';
 import { nextScale, SCALE_DEFAULT } from './ui/content-scale';
 import { mountFocusMask } from './ui/focus-mask';
+import { markActiveGroup, clearActiveGroups } from './ui/active-group';
 import { mountStatusBadge, type StatusBadgeHandle } from './ui/status-badge';
 import {
   mountContentMap,
@@ -142,6 +144,26 @@ let mapBoxes: MapBox[] = [];
 let mapTrackH = 0;
 /** Pending scroll-update frame, so bursts of scroll events coalesce into one. */
 let mapRaf = 0;
+/**
+ * The group currently carrying `data-active` (the accent border, §4.6). Derived
+ * from the SAME scroll read that drives the map, so the border costs no extra
+ * layout access. Reset — with the stale attribute swept — whenever the layer or
+ * its groups are rebuilt (see `resetActiveGroup`).
+ */
+let prevActiveGroupId: string | null = null;
+
+/**
+ * The layer (or, after a keyed reconcile, some of its groups) was rebuilt: drop
+ * any surviving `data-active` and forget the remembered id, so the next scroll
+ * read re-derives the border from scratch. A reused D7 node keeps its
+ * attributes, hence the sweep — nulling `prevActiveGroupId` alone would strand
+ * a border on it. Called once per rebuild, never on the scroll path.
+ */
+function resetActiveGroup(): void {
+  prevActiveGroupId = null;
+  const layer = currentLayer();
+  if (layer) clearActiveGroups(layer);
+}
 
 /**
  * The layer that owns scroll. `.level-layer` is `position:absolute; inset:0;
@@ -192,14 +214,30 @@ function cacheMapBoxes(): void {
 
 /**
  * Read the layer's scroll metrics, then write the map's active bars + indicator
- * position. Strict read-then-write: the boxes and the track height come from
- * the cache, so this touches layout exactly once (the three scroll reads).
+ * position AND the reading column's active-group border (§4.6). Strict
+ * read-then-write: the boxes and the track height come from the cache, so this
+ * touches layout exactly once (the three scroll reads) — the accent border is
+ * derived from `mapBoxes` + the SAME `scrollTop`/`clientHeight`, adding no read.
+ *
+ * `resolveAnchor(null, …)` is spec §2.5's anchor rule 2 verbatim: passing a null
+ * caret forces the nearest-to-viewport-centre branch. The caret is deliberately
+ * NOT consulted — the border must exist before any caret is placed, and
+ * `focus-mask.ts` already owns the caret-driven dimming.
  */
 function updateMapFromScroll(): void {
   const layer = currentLayer();
-  if (!contentMap || !layer) return;
-  const { scrollTop, scrollHeight, clientHeight } = layer; // READ
-  contentMap.setActive(visibleIds(mapBoxes, scrollTop, clientHeight)); // WRITE
+  if (!layer) return;
+
+  // --- READS (all of them, together) ---
+  const { scrollTop, scrollHeight, clientHeight } = layer;
+
+  // --- WRITES ---
+  const activeId = resolveAnchor(null, mapBoxes, scrollTop + clientHeight / 2);
+  markActiveGroup(layer, activeId, prevActiveGroupId);
+  prevActiveGroupId = activeId;
+
+  if (!contentMap) return;
+  contentMap.setActive(visibleIds(mapBoxes, scrollTop, clientHeight));
   contentMap.setIndicator(indicatorOffset(scrollTop, scrollHeight, clientHeight, mapTrackH));
 }
 
@@ -265,6 +303,7 @@ function renderCurrent(): void {
   remountCaret();
   remountFocusMask();
   mountScrubberForState();
+  resetActiveGroup(); // the old layer node is gone; re-derive the border below
   refreshMap();
 }
 
@@ -420,6 +459,7 @@ function applyResult(result: LoadResultDTO): void {
       statusBadge?.setStatus('untagged');
     }
     mountScrubberForState();
+    resetActiveGroup();
     refreshMap(); // no table → hides the map
   }
 }
@@ -633,7 +673,9 @@ window.addEventListener('DOMContentLoaded', () => {
     remountCaret();
     remountFocusMask();
     // The FINAL layer is the one that survives: rebuild the map against it and
-    // re-measure the group boxes (a new level has entirely new offsets).
+    // re-measure the group boxes (a new level has entirely new offsets). The
+    // previously-active group lived on the layer that was just removed.
+    resetActiveGroup();
     refreshMap();
   });
 
@@ -732,6 +774,9 @@ async function handleDocChanged(): Promise<void> {
         remountCaret();
         remountFocusMask();
         mountScrubberForState();
+        // Reconcile may have replaced the active group's node (or kept it, D7):
+        // sweep the marker and re-derive it from the fresh offsets.
+        resetActiveGroup();
         refreshMap(); // reconcile changed the groups → rebuild + re-measure
       } else {
         renderCurrent();
@@ -780,6 +825,7 @@ async function handleDocChanged(): Promise<void> {
       statusBadge?.setStatus('untagged');
     }
     mountScrubberForState();
+    resetActiveGroup();
     refreshMap(); // no table → hides the map
   }
 
