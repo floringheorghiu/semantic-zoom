@@ -58,6 +58,43 @@ export function resolveAnchor(
 }
 
 /**
+ * Record the place we are LEAVING, so zooming back in feels "remembered"
+ * (§2.5, `lastCaretIn` / `lastAnchorIn`).
+ *
+ * The whole ancestor chain is written, not just one link. Leaving level 0 we
+ * know both the paragraph within its section AND the section within its meta;
+ * recording only `lastCaretIn[S]` would make `0 → −2 → 0` forget the section
+ * (`mapAcrossLevels('-2->-1')` would fall back to `meta[M].children[0]`) and so
+ * land on the wrong paragraph.
+ *
+ * Leaving −1 records only `lastAnchorIn` — a DEEPER memory (`lastCaretIn[S]`)
+ * from an earlier visit must survive, which is what makes the two-hop
+ * `−2 → −1 → 0` restore the exact paragraph you were reading.
+ */
+export function recordPlace(
+  source: ZoomLevel,
+  anchorId: string,
+  index: ResolvedIndex,
+  lastCaretIn: Map<string, string>,
+  lastAnchorIn: Map<string, string>,
+): void {
+  if (source === 0) {
+    // anchor is a P: remember it in its S, and remember that S in its M.
+    const s = index.parentOfParagraph.get(anchorId);
+    if (s) {
+      lastCaretIn.set(s, anchorId);
+      const m = index.parentOfSection.get(s);
+      if (m) lastAnchorIn.set(m, s);
+    }
+  } else if (source === -1) {
+    // anchor is an S: remember it in its M. Never clobber lastCaretIn.
+    const m = index.parentOfSection.get(anchorId);
+    if (m) lastAnchorIn.set(m, anchorId);
+  }
+  // source === -2: the meta level is the root — nothing above it to remember.
+}
+
+/**
  * Cross-level mapping (§2.5 table). Maps the source-level anchor to its
  * semantic relative at the target level. Pure, synchronous, O(1) — the −2 → 0
  * row composes two single-step reads.

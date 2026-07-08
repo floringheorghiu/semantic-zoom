@@ -4,6 +4,7 @@ import { observeOn, switchMap } from 'rxjs/operators';
 import type { LookupTable, ResolvedIndex, ZoomLevel } from '../engine/schema';
 import {
   resolveAnchor,
+  recordPlace,
   mapAcrossLevels,
   centerScrollTop,
   type MountedBox,
@@ -203,6 +204,81 @@ function findNode(layer: HTMLElement, level: ZoomLevel, id: string): HTMLElement
   return layer.querySelector<HTMLElement>(selector);
 }
 
+/**
+ * Measure where `layer` must scroll to center the target node, or null if the
+ * node isn't in this layer.
+ *
+ * `.pgroup` carries `content-visibility: auto` (§4.2, D8), so a group whose
+ * contents the browser has SKIPPED gives its descendants no layout box at all:
+ * `offsetParent` is null and `el.offsetTop` reads **0**. At target −1/−2 the
+ * node we measure IS the `.pgroup` (which always has a box), but at target 0 it
+ * is a `.pnode` inside one — so an unguarded read returned 0, `centerScrollTop`
+ * clamped to 0, and every zoom back into raw text slammed the view to the top
+ * of the document.
+ *
+ * The fix is to force just the target's OWN group to render for the duration of
+ * the read, then restore whatever was there. Exactly one group is un-skipped,
+ * so this stays the "one contained layout" §2.5 asks for — not a full-tree
+ * relayout. All reads happen together, before the caller writes any scroll.
+ */
+export function measureTargetTop(
+  layer: HTMLElement,
+  level: ZoomLevel,
+  targetId: string,
+): number | null {
+  const el = findNode(layer, level, targetId);
+  if (!el) return null;
+
+  const group = el.closest<HTMLElement>('.pgroup');
+  // At −1/−2 the target IS its group: it already has a box, nothing to force.
+  const forced = group && group !== el ? group : null;
+  const saved = forced ? forced.style.contentVisibility : '';
+  if (forced) forced.style.contentVisibility = 'visible';
+
+  // --- reads (all of them, together) ---
+  const offsetTop = el.offsetTop;
+  const offsetHeight = el.offsetHeight;
+  const clientHeight = layer.clientHeight;
+  const scrollHeight = layer.scrollHeight;
+
+  if (forced) forced.style.contentVisibility = saved;
+
+  return centerScrollTop({ offsetTop, offsetHeight }, { clientHeight, scrollHeight });
+}
+
+/** Frames of scroll convergence allowed after the frame-n+1 measurement. */
+const SETTLE_FRAMES = 5;
+
+/**
+ * Measure → scroll → re-measure until the scroll position converges.
+ *
+ * Why a loop and not a single read: groups ABOVE the target are still skipped,
+ * so their heights come from `contain-intrinsic-size` ESTIMATES — the target's
+ * `offsetTop` is therefore approximate on the first pass. Scrolling to it makes
+ * the browser render that region, the real sizes land, and the next measurement
+ * lands on the true value. This is not "estimated-height centering" (which §2.5
+ * forbids): every pass measures real layout, and the fixpoint is exact.
+ *
+ * Capped at `SETTLE_FRAMES` (~5 frames ≈ 80ms), well inside the 200ms opacity
+ * fade — the layer is still fading up, so no intermediate position is visible.
+ * Scroll is ONLY ever written through `scrollCommands$` (§3.2).
+ */
+export function settleScroll(
+  layer: HTMLElement,
+  level: ZoomLevel,
+  targetId: string,
+  framesLeft: number,
+  schedule: (cb: () => void) => void = (cb) => void requestAnimationFrame(cb),
+): void {
+  const top = measureTargetTop(layer, level, targetId);
+  if (top === null) return;
+  if (Math.abs(layer.scrollTop - top) <= 1) return; // converged
+  scrollCommands$.next({ el: layer, top }); // the single rAF-scheduled queue
+  if (framesLeft > 0) {
+    schedule(() => settleScroll(layer, level, targetId, framesLeft - 1, schedule));
+  }
+}
+
 function prefersReducedMotion(): boolean {
   return (
     typeof window !== 'undefined' &&
@@ -242,16 +318,9 @@ function runTransition(
     const caretAnchor = source === 0 ? st.caret.paragraphId : null;
     const anchorId = resolveAnchor(caretAnchor, boxes, center);
 
-    // Remember the place we're leaving so zooming back in feels "remembered".
-    if (anchorId) {
-      if (source === 0) {
-        const s = st.index.parentOfParagraph.get(anchorId);
-        if (s) st.lastCaretIn.set(s, anchorId);
-      } else if (source === -1) {
-        const m = st.index.parentOfSection.get(anchorId);
-        if (m) st.lastAnchorIn.set(m, anchorId);
-      }
-    }
+    // Remember the place we're leaving (whole ancestor chain) so zooming back
+    // in feels "remembered" — see `recordPlace` (§2.5).
+    if (anchorId) recordPlace(source, anchorId, st.index, st.lastCaretIn, st.lastAnchorIn);
 
     const ctx: MapCtx = {
       index: st.index,
@@ -284,18 +353,24 @@ function runTransition(
     let timeoutId: ReturnType<typeof setTimeout> | 0 = 0;
     let onEnd: ((e: TransitionEvent) => void) | null = null;
 
-    // --- Frame n+1: one contained measure → scroll → start fade. ---
-    const rafId = requestAnimationFrame(() => {
-      if (targetId) {
-        const el = findNode(newLayer, target, targetId);
-        if (el) {
-          const top = centerScrollTop(
-            { offsetTop: el.offsetTop, offsetHeight: el.offsetHeight },
-            { clientHeight: newLayer.clientHeight, scrollHeight: newLayer.scrollHeight },
-          );
-          scrollCommands$.next({ el: newLayer, top }); // single rAF queue
-        }
-      }
+    // Every rAF this transition owns (frame n+1, the settle chain, the
+    // reduced-motion finish), so an abort (switchMap) cancels all of them.
+    // Ids are dropped as they fire, so teardown never cancels a stale id.
+    const pendingRafs = new Set<number>();
+    const raf = (cb: () => void): number => {
+      const id = requestAnimationFrame(() => {
+        pendingRafs.delete(id);
+        cb();
+      });
+      pendingRafs.add(id);
+      return id;
+    };
+
+    // --- Frame n+1: contained measure → scroll → start fade. ---
+    raf(() => {
+      // Measure + scroll, then converge over the next few frames while the
+      // skipped groups above the target resolve their real heights.
+      if (targetId) settleScroll(newLayer, target, targetId, SETTLE_FRAMES, raf);
       newLayer.style.visibility = 'visible';
       newLayer.removeAttribute('data-entering'); // starts the 200ms opacity fade
 
@@ -315,7 +390,7 @@ function runTransition(
 
       if (prefersReducedMotion()) {
         // CSS sets `transition:none` → no transitionend fires; swap next frame.
-        requestAnimationFrame(finish);
+        raf(finish);
       } else {
         onEnd = (e: TransitionEvent) => {
           if (e.propertyName === 'opacity') finish();
@@ -327,7 +402,9 @@ function runTransition(
     });
 
     return () => {
-      cancelAnimationFrame(rafId);
+      // Cancels frame n+1 AND any still-queued settle frame.
+      for (const id of pendingRafs) cancelAnimationFrame(id);
+      pendingRafs.clear();
       if (timeoutId) clearTimeout(timeoutId);
       if (onEnd) newLayer.removeEventListener('transitionend', onEnd);
       if (!done) {

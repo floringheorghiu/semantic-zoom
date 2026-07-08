@@ -3,6 +3,7 @@ import { buildIndex, type LookupTable } from './schema';
 import {
   centerScrollTop,
   resolveAnchor,
+  recordPlace,
   mapAcrossLevels,
   type MapCtx,
 } from './anchor';
@@ -90,6 +91,84 @@ test('−2 → 0 is the two-hop composition (still O(1))', () => {
     lastCaretIn: new Map([['S1', 'P1b']]),
   });
   expect(mapAcrossLevels(-2, 0, 'M1', ctx)).toBe('P1b');
+});
+
+// --- recordPlace: the ancestor chain of "where we left off" -----------------
+
+test('recordPlace leaving level 0 records BOTH the caret AND its section', () => {
+  const index = buildIndex(table);
+  const lastCaretIn = new Map<string, string>();
+  const lastAnchorIn = new Map<string, string>();
+
+  recordPlace(0, 'P1b', index, lastCaretIn, lastAnchorIn);
+
+  expect(lastCaretIn.get('S1')).toBe('P1b');  // P within its S
+  expect(lastAnchorIn.get('M1')).toBe('S1');  // ...and that S within its M
+});
+
+test('recordPlace leaving level −1 records only lastAnchorIn, preserving a deeper caret', () => {
+  const index = buildIndex(table);
+  const lastCaretIn = new Map<string, string>([['S1', 'P1b']]);
+  const lastAnchorIn = new Map<string, string>();
+
+  recordPlace(-1, 'S1', index, lastCaretIn, lastAnchorIn);
+
+  expect(lastAnchorIn.get('M1')).toBe('S1');
+  // The deeper memory must SURVIVE — it is what makes −2 → 0 land on P1b.
+  expect(lastCaretIn.get('S1')).toBe('P1b');
+});
+
+test('recordPlace leaving level −2 is a no-op (nothing above meta)', () => {
+  const index = buildIndex(table);
+  const lastCaretIn = new Map<string, string>();
+  const lastAnchorIn = new Map<string, string>();
+
+  recordPlace(-2, 'M1', index, lastCaretIn, lastAnchorIn);
+
+  expect(lastCaretIn.size).toBe(0);
+  expect(lastAnchorIn.size).toBe(0);
+});
+
+test('round-trip 0 → −2 → 0 returns to the exact paragraph (two-hop memory)', () => {
+  // The user-reported scenario: reading P7 in S4 / M3, zoom out to the story
+  // level, zoom back to raw — and land on P7, not on the first paragraph.
+  const t: LookupTable = {
+    version: 1,
+    docHash: 'b'.repeat(64),
+    meta: { M3: { id: 'M3', level: -2, children: ['S3', 'S4', 'S5'], title: 'm3', body: 'b' } },
+    sections: {
+      S3: { id: 'S3', level: -1, parent: 'M3', children: ['P3'], title: 's3', body: 'b' },
+      S4: { id: 'S4', level: -1, parent: 'M3', children: ['P6', 'P7', 'P8'], title: 's4', body: 'b' },
+      S5: { id: 'S5', level: -1, parent: 'M3', children: ['P9'], title: 's5', body: 'b' },
+    },
+    paragraphs: Object.fromEntries(
+      (['P3', 'P6', 'P7', 'P8', 'P9'] as const).map((id, i) => [
+        id,
+        { id, level: 0 as const, parent: id === 'P3' ? 'S3' : id === 'P9' ? 'S5' : 'S4',
+          kind: 'prose' as const, span: { start: i, end: i + 1 }, html: '' },
+      ]),
+    ),
+    order: {
+      meta: ['M3'],
+      sections: ['S3', 'S4', 'S5'],
+      paragraphs: ['P3', 'P6', 'P7', 'P8', 'P9'],
+    },
+  };
+
+  const ctx: MapCtx = {
+    index: buildIndex(t),
+    table: t,
+    lastCaretIn: new Map(),
+    lastAnchorIn: new Map(),
+  };
+
+  // Leaving raw text with the caret in P7 (0 → −2).
+  recordPlace(0, 'P7', ctx.index, ctx.lastCaretIn, ctx.lastAnchorIn);
+  expect(mapAcrossLevels(0, -2, 'P7', ctx)).toBe('M3');
+
+  // ...and back in. Two hops: M3 → S4 (remembered) → P7 (remembered).
+  // Without the lastAnchorIn link this would fall back to S3 → P3.
+  expect(mapAcrossLevels(-2, 0, 'M3', ctx)).toBe('P7');
 });
 
 test('centerScrollTop clamps at 0', () => {
