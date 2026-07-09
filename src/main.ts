@@ -17,7 +17,7 @@ import {
 } from './ui/viewport';
 import { buildHeader, titlePid } from './ui/header';
 import { mountZoomScrubber } from './ui/zoom-scrubber';
-import { mountCaret } from './ui/caret';
+import { mountCaret, nextParagraph } from './ui/caret';
 import { nextScale, SCALE_DEFAULT } from './ui/content-scale';
 import { mountFocusMask } from './ui/focus-mask';
 import { markActiveGroup, clearActiveGroups, sectionAtTop } from './ui/active-group';
@@ -189,20 +189,62 @@ function currentLayer(): HTMLElement | null {
 }
 
 /**
- * Scroll the current layer so the clicked group sits just below the top edge.
- * The write goes through the single rAF `scrollCommands$` queue (spec §3.2) —
- * `.scrollTop` is NEVER assigned here.
+ * Scroll the current layer so `id`'s element (a paragraph, section, or
+ * milestone — whichever exists) sits just below the top edge — never
+ * centered. The write goes through the single rAF `scrollCommands$` queue
+ * (spec §3.2) — `.scrollTop` is NEVER assigned here. Used by both the
+ * content-map's click-to-navigate and ⌘↓/⌘↑'s step-to-next-item.
  */
-function scrollToGroup(id: string): void {
+function scrollItemToTop(id: string): void {
   const layer = currentLayer();
   if (!layer) return;
   const el = layer.querySelector<HTMLElement>(
-    `.pgroup[data-sid="${id}"], .pgroup[data-mid="${id}"]`,
+    `.pnode[data-pid="${id}"], .pgroup[data-sid="${id}"], .pgroup[data-mid="${id}"]`,
   );
   if (!el) return;
   const max = Math.max(0, layer.scrollHeight - layer.clientHeight);
   const top = Math.min(Math.max(el.offsetTop - 24, 0), max);
   scrollCommands$.next({ el: layer, top });
+}
+
+/**
+ * ⌘↓ / ⌘↑ (View menu): step to the next/previous item at the CURRENT zoom
+ * level — paragraphs at k=0, sections at k=−1, milestones at k=−2 — and
+ * scroll it to the top via `scrollItemToTop` (never centered, per the
+ * request this implements). A no-op with nothing structured to step through
+ * (no document, or an untagged/corrupt raw view).
+ *
+ * At k=0 this moves the read-only caret (dispatched exactly like a click —
+ * `caretIsCurrent = true` — so it also becomes the zoom-out anchor, same as
+ * clicking the paragraph directly). The scroll-driven active-group border
+ * and focus-mask dimming then follow it through their own existing paths
+ * (the scroll write fires a real `scroll` event; `caretPlaced` drives
+ * focus-mask reactively). At k=−1/−2 there is no caret, so the active-group
+ * border is moved explicitly here — mirroring what a scroll would
+ * eventually settle on, but synchronously, so a second rapid ⌘↓/⌘↑ steps
+ * from the right place instead of a stale one.
+ */
+function navigateItem(dir: 1 | -1): void {
+  if (!currentTable) return;
+
+  if (currentLevel === 0) {
+    const current = snapshot().caret.paragraphId;
+    const next = nextParagraph(currentTable.order.paragraphs, current, dir);
+    if (!next || next === current) return;
+    markCaret(next);
+    caretIsCurrent = true;
+    actions$.next(caretPlaced(next, 0));
+    scrollItemToTop(next);
+  } else {
+    const ids = currentLevel === -1 ? currentTable.order.sections : currentTable.order.meta;
+    const current = prevActiveGroupId;
+    const next = nextParagraph(ids, current, dir);
+    if (!next || next === current) return;
+    const layer = currentLayer();
+    if (layer) markActiveGroup(layer, next, current);
+    prevActiveGroupId = next;
+    scrollItemToTop(next);
+  }
 }
 
 /**
@@ -318,7 +360,7 @@ function onViewportWheel(): void {
  * this single listener catches the `.level-layer`'s scroll across layer swaps.
  */
 function mountContentMapOnce(): void {
-  contentMap = mountContentMap(contentMapEl, { onSelect: scrollToGroup });
+  contentMap = mountContentMap(contentMapEl, { onSelect: scrollItemToTop });
   viewportEl.addEventListener('scroll', onViewportScroll, true);
   viewportEl.addEventListener('wheel', onViewportWheel, { passive: true });
   contentMapTeardown = () => {
@@ -656,6 +698,12 @@ async function installMenu(): Promise<void> {
       await MenuItem.new({ id: 'lvl-sections', text: 'Sections', accelerator: 'CmdOrCtrl+2', action: () => requestLevel(-1) }),
       await MenuItem.new({ id: 'lvl-story', text: 'Story', accelerator: 'CmdOrCtrl+3', action: () => requestLevel(-2) }),
       await sep(),
+      // Step to the next/previous item AT THE CURRENT LEVEL (paragraph at
+      // k=0, section at k=−1, milestone at k=−2) — distinct from the level
+      // switches above, which change WHICH level you're viewing.
+      await MenuItem.new({ id: 'nav-next', text: 'Next Item', accelerator: 'CmdOrCtrl+Down', action: () => navigateItem(1) }),
+      await MenuItem.new({ id: 'nav-prev', text: 'Previous Item', accelerator: 'CmdOrCtrl+Up', action: () => navigateItem(-1) }),
+      await sep(),
       // Content scale (browser-style). ⌘+ is the macOS-standard zoom-in
       // accelerator and fires on the unshifted ⌘= key too.
       await MenuItem.new({ id: 'scale-in', text: 'Zoom In', accelerator: 'CmdOrCtrl+Plus', action: () => scaleContent(1) }),
@@ -785,7 +833,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // The map sidebar (§4.9): mounted once, outside #viewport so `renderLevel`'s
   // replaceChildren cannot destroy it. Click-to-scroll routes through
-  // scrollCommands$ (see scrollToGroup).
+  // scrollCommands$ (see scrollItemToTop).
   mountContentMapOnce();
 
   // No document is open yet — show the placeholder until the first openFile.
