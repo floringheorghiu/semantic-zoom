@@ -18,7 +18,7 @@ import {
 } from './ui/viewport';
 import { buildHeader, titlePid } from './ui/header';
 import { mountZoomScrubber } from './ui/zoom-scrubber';
-import { mountCaret, nextParagraph, livePids } from './ui/caret';
+import { mountCaret, nextParagraph } from './ui/caret';
 import { nextScale, SCALE_DEFAULT } from './ui/content-scale';
 import { mountFocusMask } from './ui/focus-mask';
 import { markActiveGroup, clearActiveGroups, sectionAtTop } from './ui/active-group';
@@ -228,49 +228,39 @@ function scrollItemToTop(id: string, framesLeft = 5): void {
 
 /**
  * ⌘↓ / ⌘↑ (View menu): step to the next/previous item at the CURRENT zoom
- * level — paragraphs at k=0, sections at k=−1, milestones at k=−2 — and
- * scroll it to the top via `scrollItemToTop` (never centered, per the
- * request this implements). A no-op with nothing structured to step through
- * (no document, or an untagged/corrupt raw view).
+ * level — SECTIONS at k=0 and k=−1, milestones at k=−2 — and scroll it to
+ * the top via `scrollItemToTop` (never centered, per the request this
+ * implements). A no-op with nothing structured to step through (no
+ * document, or an untagged/corrupt raw view).
  *
- * At k=0 this moves the read-only caret (dispatched exactly like a click —
- * `caretIsCurrent = true` — so it also becomes the zoom-out anchor, same as
- * clicking the paragraph directly). The scroll-driven active-group border
- * and focus-mask dimming then follow it through their own existing paths
- * (the scroll write fires a real `scroll` event; `caretPlaced` drives
- * focus-mask reactively). At k=−1/−2 there is no caret, so the active-group
- * border is moved explicitly here — mirroring what a scroll would
- * eventually settle on, but synchronously, so a second rapid ⌘↓/⌘↑ steps
- * from the right place instead of a stale one.
+ * k=0 deliberately steps SECTION-by-section, not paragraph-by-paragraph.
+ * Paragraph stepping shipped four times and never scrolled in the real
+ * app's WKWebView despite passing every headless-Chrome and jsdom check —
+ * measuring a `.pnode` inside a `content-visibility: auto` group is
+ * engine-behavior-dependent in ways this machine cannot verify headlessly
+ * (see bb00e65 and docs/live-app-testing-setup.md). Section targets are
+ * their own `.pgroup` boxes — the one measurement path the user confirmed
+ * working at EVERY level (it's what content-map clicks use, including at
+ * k=0) — so ⌘↓/⌘↑ now walks the same ids the content map shows,
+ * user-approved trade. Restore paragraph stepping only with real-WebKit
+ * verification in hand.
  *
- * At k=0 the step list is `livePids` (the actually-rendered `.pnode`s), NOT
- * `currentTable.order.paragraphs` — same reason plain arrow-key caret
- * movement already uses it (caret.ts): the document's very first paragraph
- * is promoted to the page title and never rendered as a `.pnode` in the
- * body, so a data-order list lands a step on a paragraph with nothing to
- * mark or scroll to, silently doing nothing on that one step.
+ * `prevActiveGroupId` is kept current by every scroll tick
+ * (`updateMapFromScroll`'s `sectionAtTop`) at all levels, so stepping picks
+ * up from wherever the user scrolled to, and the explicit `markActiveGroup`
+ * here keeps a second rapid press stepping from the right place.
  */
 function navigateItem(dir: 1 | -1): void {
   if (!currentTable) return;
 
-  if (currentLevel === 0) {
-    const current = snapshot().caret.paragraphId;
-    const next = nextParagraph(livePids(viewportEl), current, dir);
-    if (!next || next === current) return;
-    markCaret(next);
-    caretIsCurrent = true;
-    actions$.next(caretPlaced(next, 0));
-    scrollItemToTop(next);
-  } else {
-    const ids = currentLevel === -1 ? currentTable.order.sections : currentTable.order.meta;
-    const current = prevActiveGroupId;
-    const next = nextParagraph(ids, current, dir);
-    if (!next || next === current) return;
-    const layer = currentLayer();
-    if (layer) markActiveGroup(layer, next, current);
-    prevActiveGroupId = next;
-    scrollItemToTop(next);
-  }
+  const ids = currentLevel === -2 ? currentTable.order.meta : currentTable.order.sections;
+  const current = prevActiveGroupId;
+  const next = nextParagraph(ids, current, dir);
+  if (!next || next === current) return;
+  const layer = currentLayer();
+  if (layer) markActiveGroup(layer, next, current);
+  prevActiveGroupId = next;
+  scrollItemToTop(next);
 }
 
 /**
