@@ -20,7 +20,7 @@ import { buildHeader, titlePid } from './ui/header';
 import { mountZoomScrubber } from './ui/zoom-scrubber';
 import { mountCaret, nextParagraph } from './ui/caret';
 import { nextScale, SCALE_DEFAULT } from './ui/content-scale';
-import { mountFocusMask } from './ui/focus-mask';
+// mountFocusMask import removed with the mask disable — see remountFocusMask.
 import { markActiveGroup, clearActiveGroups, sectionAtTop } from './ui/active-group';
 import { mountStatusBadge, type StatusBadgeHandle } from './ui/status-badge';
 import { mountEmptyState } from './ui/empty-state';
@@ -262,6 +262,20 @@ function navigateItem(dir: 1 | -1): void {
   if (layer) markActiveGroup(layer, next, current);
   prevActiveGroupId = next;
   scrollItemToTop(next);
+
+  // Focus mask (§4.3) is caret-driven and independent of the active-group
+  // border above — without this, stepping to a new section left the mask
+  // spotlit on wherever the caret was last CLICKED, not where ⌘↓/⌘↑ just
+  // took you. Move the caret to the target section's first paragraph, same
+  // as a click there would (mountCaret's callback), so the mask follows.
+  // Only meaningful at k=0 — the caret/mask don't exist at −1/−2.
+  if (currentLevel === 0) {
+    const firstPid = currentTable.sections[next]?.children[0];
+    if (firstPid) {
+      caretIsCurrent = true;
+      actions$.next(caretPlaced(firstPid, 0));
+    }
+  }
 }
 
 /**
@@ -439,17 +453,24 @@ function markCaret(pid: string): void {
 }
 
 /**
- * (Re)mount the group focus-mask after a render. It only makes sense at k=0 for
- * a native doc (where `.pgroup[data-sid]` groups exist and a caret can pick an
- * active group); at other levels or for raw/untagged docs we tear down and skip.
- * mountFocusMask subscribes to the store, so a teardown-then-mount is idempotent.
+ * Focus mask (§4.3) DISABLED by product decision, 2026-07-09: in live use the
+ * caret-driven dimming read as annoying — everything except the last-clicked
+ * section sat at reduced opacity, which fought the new ⌘↓/⌘↑ section
+ * navigation instead of helping it. The module and its tests are kept intact
+ * (src/ui/focus-mask.ts); to re-enable, restore the mountFocusMask import and
+ * the original body:
+ *
+ *   focusMaskTeardown?.();
+ *   focusMaskTeardown = null;
+ *   if (!(currentTable && currentLevel === 0)) return;
+ *   focusMaskTeardown = mountFocusMask(viewportEl);
+ *
+ * The function is kept (as a teardown-only no-op) so every existing call site
+ * — render, zoom settle, hot reload — stays wired for that re-enable.
  */
 function remountFocusMask(): void {
   focusMaskTeardown?.();
   focusMaskTeardown = null;
-  const nativeAtK0 = !!currentTable && currentLevel === 0;
-  if (!nativeAtK0) return;
-  focusMaskTeardown = mountFocusMask(viewportEl);
 }
 
 /**
@@ -567,13 +588,14 @@ function applyResult(result: LoadResultDTO): void {
   }
 }
 
-/** Show the pre-open placeholder (Figma 77:2622) in the empty viewport. */
+/** Show the pre-open placeholder (Figma 111:3743) in the empty viewport. */
 function showEmptyState(): void {
   emptyStateTeardown?.();
   emptyStateTeardown = mountEmptyState(viewportEl, {
     recentFiles: getRecentFiles(),
     onOpen: () => void promptOpen(),
     onSelectRecent: (path) => void openFile(path),
+    version: __APP_VERSION__,
   }).teardown;
 }
 
@@ -769,6 +791,26 @@ function installKeyboardShortcuts(): void {
       default: return;
     }
     e.preventDefault();
+  });
+
+  // ⌘↓/⌘↑ item navigation, handled in the DOM rather than only via the View-
+  // menu accelerator. ⌘↓/⌘↑ are macOS TEXT-NAVIGATION key equivalents
+  // (move-to-end/start-of-document), and the webview gets first shot at key
+  // equivalents before the menu: whenever a DOM text selection exists — always
+  // at k=0 once the caret has been clicked into place — WebKit consumes the
+  // event itself and the menu accelerator NEVER fires (verified in the live
+  // app 2026-07-09: menu clicks logged, keyboard at k=0 logged nothing; the
+  // same keys DID reach navigateItem at −1/−2, where no selection exists).
+  // preventDefault() marks the event page-handled, which (a) suppresses
+  // WebKit's own move-to-end scroll and (b) stops it being forwarded to the
+  // menu — so this fires exactly once per press at every level.
+  window.addEventListener('keydown', (e) => {
+    if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+    if (inEditable(e.target)) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      navigateItem(e.key === 'ArrowDown' ? 1 : -1);
+    }
   });
 
   // Content-scale zoom-IN via the physical =/+ key. The View-menu accelerator
