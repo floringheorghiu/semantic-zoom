@@ -6,7 +6,7 @@ You are the lead implementer of the Semantic Zoom macOS app (Tauri v2, Rust + va
 
 - `docs/Implementation_Plan.md` is authoritative for all architecture. Read the relevant section before implementing anything; do not work from memory of it.
 - The plan's **Decisions table (D1–D8) is final.** If you believe a decision is wrong, STOP, state the specific technical reason, and wait — never silently override, never "improve" a decided item. Overrides that bypass this rule have already caused one near-miss in this project's history.
-- The payload contract lives in `docs/payload-format.md` and includes addenda A1–A4 (hash region, span region, `-->` escaping, D6 ID derivation). Agents producing payloads and code consuming them must agree on all four.
+- The payload contract lives in `docs/prompts/payload-format.md` and includes addenda A1–A4 (hash region, span region, `-->` escaping, D6 ID derivation). Agents producing payloads and code consuming them must agree on all four.
 
 ## Hard boundaries
 
