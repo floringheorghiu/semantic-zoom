@@ -6,6 +6,7 @@ import {
   mountZoomTransitions,
   measureTargetTop,
   settleScroll,
+  mountedBoxes,
   scrollCommands$,
   type ZoomTransitionState,
 } from './viewport';
@@ -326,6 +327,73 @@ test('measureTargetTop leaves the group untouched when the group IS the target (
 test('measureTargetTop returns null when the target is absent from the layer', () => {
   const { layer } = makeLayer();
   expect(measureTargetTop(layer, 0, 'P-nope')).toBe(null);
+});
+
+// --- mountedBoxes: the SOURCE-side anchor read, same content-visibility bug ---
+// Reported: on a fresh document, scrolled to the very top, with no caret ever
+// placed, clicking zoom-out landed on an unrelated (often much later) section.
+// Root cause: `mountedBoxes(layer, 0)` read every `.pnode`'s offsetTop
+// UNGUARDED — any node inside a still-skipped `.pgroup` (i.e. everything not
+// yet scrolled to) reported exactly 0, corrupting "nearest to center" for
+// every off-screen candidate. Fixed the same way `measureTargetTop` already
+// fixes it for one target: force every `.pgroup` visible for the read.
+
+test('mountedBoxes(level=0) force-renders EVERY group for the read, then restores each', () => {
+  const layer = document.createElement('div');
+  layer.className = 'level-layer';
+  const groups = ['S1', 'S2', 'S3'].map((sid, i) => {
+    const group = document.createElement('section');
+    group.className = 'pgroup';
+    group.dataset.sid = sid;
+    group.style.contentVisibility = 'auto';
+    const node = document.createElement('div');
+    node.className = 'pnode';
+    node.dataset.pid = `P${i}`;
+    stubBox(node, i * 500, 50);
+    group.appendChild(node);
+    layer.appendChild(group);
+    return group;
+  });
+
+  // Every group must be 'visible' AT THE MOMENT its descendant is read —
+  // exactly the skipped-group failure mode (offsetTop reads 0 while skipped).
+  const seenDuringRead: string[] = [];
+  groups.forEach((group, i) => {
+    const node = group.querySelector('.pnode') as HTMLElement;
+    Object.defineProperty(node, 'offsetTop', {
+      configurable: true,
+      get() {
+        seenDuringRead.push(group.style.contentVisibility);
+        return i * 500;
+      },
+    });
+  });
+
+  const boxes = mountedBoxes(layer, 0);
+
+  expect(seenDuringRead).toEqual(['visible', 'visible', 'visible']);
+  expect(groups.map((g) => g.style.contentVisibility)).toEqual(['auto', 'auto', 'auto']);
+  expect(boxes).toHaveLength(3);
+});
+
+test('mountedBoxes(level=-1/-2) never touches content-visibility — a .pgroup always has its own box', () => {
+  const { layer, group } = makeLayer();
+  group.style.contentVisibility = 'auto';
+  stubBox(group, 500, 100);
+
+  let touched = false;
+  Object.defineProperty(group, 'offsetTop', {
+    configurable: true,
+    get() {
+      touched = group.style.contentVisibility !== 'auto';
+      return 500;
+    },
+  });
+
+  mountedBoxes(layer, -1);
+
+  expect(touched).toBe(false);
+  expect(group.style.contentVisibility).toBe('auto');
 });
 
 // --- settleScroll: converge onto the true offset over a few frames ----------
