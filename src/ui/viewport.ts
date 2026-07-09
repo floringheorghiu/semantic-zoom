@@ -212,16 +212,47 @@ function idAttr(level: ZoomLevel): 'pid' | 'sid' | 'mid' {
  * Cached layout boxes of the mounted anchor-candidate elements at `level`
  * (paragraphs at 0, groups at −1/−2). Plain `offsetTop`/`offsetHeight` reads of
  * the already-laid-out CURRENT layer — no `getBoundingClientRect` loop (§2.5).
+ *
+ * At level 0 the candidates are `.pnode`s, DESCENDANTS of `.pgroup` — which
+ * carries `content-visibility: auto` (§4.2, D8). Per `measureTargetTop`'s own
+ * comment: a group the browser has SKIPPED gives its descendants NO layout
+ * box at all — `offsetTop` reads exactly 0, not an estimate. Confirmed by
+ * reproduction (see zoomout-debug.test.ts): with clean, accurate offsets this
+ * same "nearest to center" math correctly picks the first section from a
+ * fresh, unscrolled document; only real content-visibility-skipped `.pnode`s
+ * derail it — reported as the anchor jumping to an unrelated, often much
+ * later, section on the very first zoom-out with no caret and no scrolling.
+ *
+ * Fix: force every `.pgroup` visible for the duration of this read (restored
+ * after), the same technique `measureTargetTop` already uses for its single
+ * target — applied here to ALL groups, since `resolveAnchor` needs accurate
+ * candidates across the whole document, not just one node. This is a genuine
+ * "one contained layout" cost paid once per zoom action (D8 already budgets
+ * for that), not a per-scroll-frame cost — though on a very large document
+ * this reintroduces the full-tree layout D8 specifically avoids; unverified
+ * against the 10k-paragraph stress fixture.
  */
-function mountedBoxes(layer: HTMLElement, level: ZoomLevel): MountedBox[] {
+export function mountedBoxes(layer: HTMLElement, level: ZoomLevel): MountedBox[] {
   const selector = level === 0 ? '.pnode' : '.pgroup';
   const attr = idAttr(level);
+
+  const forced: { el: HTMLElement; saved: string }[] = [];
+  if (level === 0) {
+    for (const group of layer.querySelectorAll<HTMLElement>('.pgroup')) {
+      forced.push({ el: group, saved: group.style.contentVisibility });
+      group.style.contentVisibility = 'visible';
+    }
+  }
+
   const boxes: MountedBox[] = [];
   for (const el of layer.querySelectorAll<HTMLElement>(selector)) {
     const id = el.dataset[attr];
     if (!id) continue;
     boxes.push({ id, offsetTop: el.offsetTop, offsetHeight: el.offsetHeight });
   }
+
+  for (const { el, saved } of forced) el.style.contentVisibility = saved;
+
   return boxes;
 }
 
