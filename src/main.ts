@@ -822,6 +822,26 @@ function installKeyboardShortcuts(): void {
     e.preventDefault();
   });
 
+  // ⌘↓/⌘↑ item navigation, handled in the DOM rather than only via the View-
+  // menu accelerator. ⌘↓/⌘↑ are macOS TEXT-NAVIGATION key equivalents
+  // (move-to-end/start-of-document), and the webview gets first shot at key
+  // equivalents before the menu: whenever a DOM text selection exists — always
+  // at k=0 once the caret has been clicked into place — WebKit consumes the
+  // event itself and the menu accelerator NEVER fires (verified in the live
+  // app 2026-07-09: menu clicks logged, keyboard at k=0 logged nothing; the
+  // same keys DID reach navigateItem at −1/−2, where no selection exists).
+  // preventDefault() marks the event page-handled, which (a) suppresses
+  // WebKit's own move-to-end scroll and (b) stops it being forwarded to the
+  // menu — so this fires exactly once per press at every level.
+  window.addEventListener('keydown', (e) => {
+    if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+    if (inEditable(e.target)) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      navigateItem(e.key === 'ArrowDown' ? 1 : -1);
+    }
+  });
+
   // Content-scale zoom-IN via the physical =/+ key. The View-menu accelerator
   // `CmdOrCtrl+Plus` only matches the SHIFTED '+' (⌘⇧=), so the unshifted ⌘=
   // never reaches it — handle it here. macOS consumes ⌘⇧= at the menu before
