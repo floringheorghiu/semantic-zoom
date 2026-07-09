@@ -57,10 +57,17 @@
   display: none;
 }
 
+/* The visible bar stays a slim 4px (background-clip: content-box confines the
+   fill to the inner box); the element's own box — the actual click/hover
+   target — is twice that, via padding, so it's much easier to hit without
+   the minimap looking chunkier. */
 .map-bar {
   flex: 0 0 auto;
+  box-sizing: border-box;
   width: 100%;
-  height: 4px;
+  height: 8px;
+  padding: 2px 0;
+  background-clip: content-box;
   border-radius: 7px;
   background: var(--sz-map-bar);
   cursor: pointer;

@@ -30,10 +30,12 @@ export interface ContentMapHandle {
 
 /** Figma: panel `padding:5px`. */
 export const MAP_PADDING = 5;
-/** Bar height. Deliberately thicker than a minimap hairline — these are click
-    targets (the scroll-position indicator was descoped; the active-section
-    highlight is the map's only affordance now, so it must be easy to hit). */
-export const MAP_ITEM_H = 4;
+/** A bar's own box height (the real space it occupies in the flex column, and
+    its click/hover target) — twice its 4px VISIBLE fill. The extra height is
+    invisible padding (CSS `background-clip: content-box`), so the minimap
+    stays visually slim while the hit target is generous. Must match the CSS
+    `.map-bar` height for the capacity-fit math below to be accurate. */
+export const MAP_ITEM_H = 8;
 /** Figma: `gap:6px`; shrinks toward MAP_MIN_GAP to fit the available height. */
 export const MAP_GAP = 6;
 export const MAP_MIN_GAP = 1;
