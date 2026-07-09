@@ -197,20 +197,33 @@ function currentLayer(): HTMLElement | null {
  * content-map's click-to-navigate and ⌘↓/⌘↑'s step-to-next-item.
  *
  * Delegates to `topAlignedScrollTop` (viewport.ts), NOT a raw `el.offsetTop`
- * — a paragraph inside a currently off-screen section reads `offsetTop` 0
- * under `content-visibility: auto` (§4.2) unless that's guarded against.
+ * — a paragraph inside a currently off-screen section reads a missing or
+ * GROUP-relative box under `content-visibility: auto` (§4.2) unless that's
+ * guarded against (see `measureBox`/`chainedOffsetTop` there for both traps).
  * Deliberately does NOT pass `currentLevel`: content-map bars are SECTION
  * ids at BOTH k=0 and k=−1 (buildMapModel), not "whatever the zoom-anchor
  * target type is at this level" — passing the level here once caused this
  * function to silently search for the wrong element and no-op at k=0.
  * `topAlignedScrollTop` instead matches whichever id "kind" `id` actually is.
+ *
+ * Measure → scroll → re-measure over a few frames, exactly like the zoom
+ * transition's `settleScroll` (§2.5) and for the same reason: the first
+ * measurement can be approximate (skipped groups above the target still
+ * carry `contain-intrinsic-size` estimates; an engine that doesn't
+ * materialize forced boxes synchronously lands coarsely at the group top).
+ * Scrolling makes the browser really render the target region, the next
+ * frame's measurement is exact, and the loop stops at the fixpoint.
  */
-function scrollItemToTop(id: string): void {
+function scrollItemToTop(id: string, framesLeft = 5): void {
   const layer = currentLayer();
   if (!layer) return;
   const top = topAlignedScrollTop(layer, id);
   if (top === null) return;
-  scrollCommands$.next({ el: layer, top });
+  if (Math.abs(layer.scrollTop - top) <= 1) return; // converged
+  scrollCommands$.next({ el: layer, top }); // the single rAF-scheduled queue
+  if (framesLeft > 0) {
+    requestAnimationFrame(() => scrollItemToTop(id, framesLeft - 1));
+  }
 }
 
 /**

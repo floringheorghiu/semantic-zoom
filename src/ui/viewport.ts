@@ -273,6 +273,35 @@ function idAttr(level: ZoomLevel): 'pid' | 'sid' | 'mid' {
  * this reintroduces the full-tree layout D8 specifically avoids; unverified
  * against the 10k-paragraph stress fixture.
  */
+/**
+ * `el`'s offsetTop RELATIVE TO `layer`, by summing the `offsetParent` chain —
+ * never a bare `el.offsetTop`.
+ *
+ * Why the walk is load-bearing: `content-visibility: auto` on `.pgroup`
+ * (§4.2) implies layout containment, and a layout-contained ancestor becomes
+ * its descendants' offsetParent. So a `.pnode`'s bare `offsetTop` is
+ * GROUP-relative, not layer-relative — confirmed by direct measurement in a
+ * real engine (harness, 2026-07-09: pnodes in the section at 1628 reported
+ * offsetTop 46/100/334/372). This module's older comments assumed "`.pgroup`
+ * unpositioned ⇒ `.pnode.offsetTop` resolves against `.level-layer`" — that
+ * stopped being true the moment containment was applied. Blink happens to
+ * drop the containment synchronously while our force-visible trick holds,
+ * masking the bug there (and in every headless-Chrome verification); WebKit
+ * evidently does not, which is why ⌘↓/⌘↑ at k=0 computed tiny group-relative
+ * scroll targets in the shipped app and looked like "no scrolling at all."
+ * Summing the chain is correct under BOTH behaviors — each hop is measured
+ * in its parent's frame, whatever the engine decides that frame is.
+ */
+function chainedOffsetTop(layer: HTMLElement, el: HTMLElement): number {
+  let top = 0;
+  let node: HTMLElement | null = el;
+  while (node && node !== layer) {
+    top += node.offsetTop;
+    node = node.offsetParent as HTMLElement | null;
+  }
+  return top;
+}
+
 export function mountedBoxes(layer: HTMLElement, level: ZoomLevel): MountedBox[] {
   const selector = level === 0 ? '.pnode' : '.pgroup';
   const attr = idAttr(level);
@@ -289,7 +318,7 @@ export function mountedBoxes(layer: HTMLElement, level: ZoomLevel): MountedBox[]
   for (const el of layer.querySelectorAll<HTMLElement>(selector)) {
     const id = el.dataset[attr];
     if (!id) continue;
-    boxes.push({ id, offsetTop: el.offsetTop, offsetHeight: el.offsetHeight });
+    boxes.push({ id, offsetTop: chainedOffsetTop(layer, el), offsetHeight: el.offsetHeight });
   }
 
   for (const { el, saved } of forced) el.style.contentVisibility = saved;
@@ -335,31 +364,50 @@ function findAnyNode(layer: HTMLElement, id: string): HTMLElement | null {
 }
 
 /**
- * Read `el`'s box (`offsetTop`/`offsetHeight`), forcing its `.pgroup`
- * ancestor to render for the duration if it isn't already its own group.
+ * Read `el`'s box (`offsetTop` RELATIVE TO `layer`, plus `offsetHeight`),
+ * forcing its `.pgroup` ancestor to render for the duration if it isn't
+ * already its own group.
  *
- * `.pgroup` carries `content-visibility: auto` (§4.2, D8), so a group whose
- * contents the browser has SKIPPED gives its descendants no layout box at
- * all: `offsetParent` is null and `el.offsetTop` reads **0**. A section or
- * milestone target IS its own `.pgroup` (always has a box); a paragraph
- * target is a `.pnode` INSIDE one — so an unguarded read returned 0.
+ * Two content-visibility traps, both handled here (see `chainedOffsetTop`
+ * for the second, offsetParent one):
  *
- * The fix is to force just the target's OWN group to render for the
- * duration of the read, then restore whatever was there. Exactly one group
- * is un-skipped, so this stays the "one contained layout" §2.5 asks for —
- * not a full-tree relayout. Shared by `measureTargetTop` (centers the
- * target — zoom transitions) and `topAlignedScrollTop` (aligns it to the
- * top — ⌘↓/⌘↑ item navigation and the content-map's click-to-navigate).
+ * 1. A group whose contents the browser has SKIPPED gives its descendants no
+ *    layout box at all — force the target's OWN group visible for the read,
+ *    restore after. Exactly one group is un-skipped, so this stays the "one
+ *    contained layout" §2.5 asks for.
+ * 2. Even when the box EXISTS, a `.pnode`'s bare `offsetTop` may be
+ *    GROUP-relative (containment ⇒ the group is its offsetParent) —
+ *    engine-dependent, and the force in (1) only removes containment
+ *    synchronously in some engines. `chainedOffsetTop` sums the chain, which
+ *    is correct either way.
+ *
+ * If, after forcing, the box STILL doesn't exist (`offsetHeight` 0 — an
+ * engine that doesn't materialize skipped boxes synchronously at all), fall
+ * back to the GROUP's own box: a `.pgroup` is always laid out (skipping
+ * hides its contents, not the element). That lands the scroll at the
+ * section's top — coarse but real movement — and the caller's settle pass
+ * refines to the exact paragraph once the group has genuinely rendered.
+ *
+ * Shared by `measureTargetTop` (centers the target — zoom transitions) and
+ * `topAlignedScrollTop` (aligns it to the top — ⌘↓/⌘↑ item navigation and
+ * the content-map's click-to-navigate).
  */
-function measureBox(el: HTMLElement): { offsetTop: number; offsetHeight: number } {
+function measureBox(
+  layer: HTMLElement,
+  el: HTMLElement,
+): { offsetTop: number; offsetHeight: number } {
   const group = el.closest<HTMLElement>('.pgroup');
   const forced = group && group !== el ? group : null;
   const saved = forced ? forced.style.contentVisibility : '';
   if (forced) forced.style.contentVisibility = 'visible';
 
   // --- reads (all of them, together) ---
-  const offsetTop = el.offsetTop;
-  const offsetHeight = el.offsetHeight;
+  let offsetTop = chainedOffsetTop(layer, el);
+  let offsetHeight = el.offsetHeight;
+  if (forced && offsetHeight === 0) {
+    offsetTop = chainedOffsetTop(layer, forced);
+    offsetHeight = forced.offsetHeight;
+  }
 
   if (forced) forced.style.contentVisibility = saved;
 
@@ -377,7 +425,7 @@ export function measureTargetTop(
 ): number | null {
   const el = findNode(layer, level, targetId);
   if (!el) return null;
-  const box = measureBox(el);
+  const box = measureBox(layer, el);
   // --- reads (all of them, together) ---
   const clientHeight = layer.clientHeight;
   const scrollHeight = layer.scrollHeight;
@@ -394,7 +442,7 @@ export function measureTargetTop(
 export function topAlignedScrollTop(layer: HTMLElement, targetId: string): number | null {
   const el = findAnyNode(layer, targetId);
   if (!el) return null;
-  const box = measureBox(el);
+  const box = measureBox(layer, el);
   // --- reads (all of them, together) ---
   const clientHeight = layer.clientHeight;
   const scrollHeight = layer.scrollHeight;
