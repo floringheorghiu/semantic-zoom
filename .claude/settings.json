@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/worktree-hygiene-check.sh 2>/dev/null || true",
+            "statusMessage": "Checking worktree hygiene…"
+          }
+        ]
+      }
+    ]
+  }
+}
