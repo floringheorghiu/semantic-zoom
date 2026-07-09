@@ -278,6 +278,9 @@ function scrollItemToTop(id: string, framesLeft = 5): void {
  * here keeps a second rapid press stepping from the right place.
  */
 function navigateItem(dir: 1 | -1): void {
+  if (import.meta.env.DEV) {
+    console.debug(`[nav-debug] navigateItem ENTRY: dir=${dir} hasTable=${!!currentTable} currentLevel=${currentLevel}`);
+  }
   if (!currentTable) return;
 
   const ids = currentLevel === -2 ? currentTable.order.meta : currentTable.order.sections;
