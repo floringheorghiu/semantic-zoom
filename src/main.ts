@@ -299,6 +299,20 @@ function navigateItem(dir: 1 | -1): void {
   if (layer) markActiveGroup(layer, next, current);
   prevActiveGroupId = next;
   scrollItemToTop(next);
+
+  // Focus mask (§4.3) is caret-driven and independent of the active-group
+  // border above — without this, stepping to a new section left the mask
+  // spotlit on wherever the caret was last CLICKED, not where ⌘↓/⌘↑ just
+  // took you. Move the caret to the target section's first paragraph, same
+  // as a click there would (mountCaret's callback), so the mask follows.
+  // Only meaningful at k=0 — the caret/mask don't exist at −1/−2.
+  if (currentLevel === 0) {
+    const firstPid = currentTable.sections[next]?.children[0];
+    if (firstPid) {
+      caretIsCurrent = true;
+      actions$.next(caretPlaced(firstPid, 0));
+    }
+  }
 }
 
 /**
