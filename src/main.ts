@@ -195,10 +195,27 @@ function scrollToGroup(id: string): void {
 }
 
 /**
- * Cache the mounted group boxes (`offsetTop`/`offsetHeight`). A plain offset
- * read of an already-laid-out layer — the same cheap measurement
- * `mountedBoxes` uses in the transition. Called once per render, never per
- * scroll frame.
+ * Cache the mounted group boxes (`offsetTop`/`offsetHeight`) — a plain offset
+ * read of an already-laid-out layer, the same cheap measurement `mountedBoxes`
+ * uses in the transition.
+ *
+ * Called on EVERY rAF-throttled scroll tick (from `updateMapFromScroll`), not
+ * just once per render. `.pgroup` carries `content-visibility: auto` (§4.2)
+ * for performance on long documents: an off-screen group's height is a rough
+ * `contain-intrinsic-size` PLACEHOLDER (480px) until the browser has actually
+ * rendered it. A one-time cache taken right after render bakes that
+ * placeholder into every not-yet-visited section's `offsetTop`/`offsetHeight`
+ * — and never corrects it, so real scroll position and the cached numbers
+ * diverge further the deeper you read (worst for a section padded out by a
+ * big code block, whose true height differs most from the guess). Both
+ * consumers below — `sectionAtTop` (the reading-column border) AND
+ * `visibleIds` (the sidebar map's active bars, content-map.ts, LOCKED
+ * semantics) — read this same cache, so a stale snapshot broke both:
+ * mid-document the wrong section lit up; near the end, the stale cache's
+ * "document" was numerically shorter than the real one, so nothing did.
+ * Re-measuring here keeps every VISITED section's box exactly correct at all
+ * times — only sections still below the fold carry any estimate, matching
+ * the browser's own corrected state as you scroll through them.
  */
 function cacheMapBoxes(): void {
   mapBoxes = [];
@@ -212,11 +229,10 @@ function cacheMapBoxes(): void {
 }
 
 /**
- * Read the layer's scroll metrics, then write the map's active bars AND the
- * reading column's active-group border (§4.6). Strict read-then-write: the
- * boxes come from the cache, so this touches layout exactly once (the two
- * scroll reads) — the accent border is derived from `mapBoxes` + the SAME
- * `scrollTop`/`clientHeight`, adding no read.
+ * Refresh the box cache, then read the layer's scroll metrics, then write the
+ * map's active bars AND the reading column's active-group border (§4.6).
+ * Strict read-then-write: `cacheMapBoxes` and the scroll metrics are both
+ * reads, done together before any write below.
  *
  * The border uses `sectionAtTop` (ui/active-group.ts), NOT the §2.5
  * zoom-transition anchor (`resolveAnchor`, "nearest box center" — that one
@@ -232,6 +248,7 @@ function updateMapFromScroll(): void {
   if (!layer) return;
 
   // --- READS (all of them, together) ---
+  cacheMapBoxes();
   const { scrollTop, clientHeight } = layer;
 
   // --- WRITES ---
@@ -244,11 +261,12 @@ function updateMapFromScroll(): void {
 }
 
 /**
- * Rebuild the map for the current document + level, re-cache the group boxes,
- * and sync the active highlight once. Called after every render, after the
- * zoom transition settles, and after a content-scale change (CSS `zoom`
- * reflows the column, invalidating every cached offset). Hidden for
- * non-native documents, which have no groups to map.
+ * Rebuild the map for the current document + level, and sync the active
+ * highlight once (which also (re)caches the group boxes — see
+ * `updateMapFromScroll`). Called after every render, after the zoom
+ * transition settles, and after a content-scale change (CSS `zoom` reflows
+ * the column, invalidating every cached offset). Hidden for non-native
+ * documents, which have no groups to map.
  */
 function refreshMap(): void {
   if (!contentMap) return;
@@ -259,7 +277,6 @@ function refreshMap(): void {
   }
   contentMapEl.hidden = false;
   contentMap.render(buildMapModel(currentTable, currentIndex, currentLevel));
-  cacheMapBoxes();
   updateMapFromScroll();
 }
 
