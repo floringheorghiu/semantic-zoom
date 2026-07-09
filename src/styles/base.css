@@ -52,6 +52,26 @@ body {
   display: none;
 }
 
+/* Opened file's name, WINDOW-centered (Figma 104-3409) — absolute so the
+   traffic-light inset and the right-edge badge can't push it off center.
+   pointer-events: none keeps the drag region draggable through it. */
+.toolbar {
+  position: relative;
+}
+
+.toolbar .doc-filename {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 600 13px/1.2 var(--sz-font);
+  color: var(--sz-ink);
+  pointer-events: none;
+}
+
 /* Push the status-badge pill to the right edge of the clean white bar. */
 .toolbar .status-badge {
   margin-left: auto;

@@ -86,6 +86,7 @@ let viewportEl: HTMLElement;
 let scrubberEl: HTMLElement;
 let zoomContextEl: HTMLElement;
 let statusEl: HTMLElement;
+let docFilenameEl: HTMLElement;
 let contentMapEl: HTMLElement;
 
 /** Levels available given the current document. */
@@ -611,6 +612,7 @@ function closeDocument(): void {
   scrubberTeardown = null;
   zoomContextEl.textContent = '';
   statusEl.textContent = 'No document';
+  docFilenameEl.textContent = '';
   statusBadge?.setStatus('native'); // clears any corrupt/untagged note
 
   viewportEl.replaceChildren();
@@ -622,6 +624,8 @@ function closeDocument(): void {
 
 export async function openFile(path: string): Promise<void> {
   currentPath = path; // remembered so `doc://changed` can silently reload it (§5.3)
+  // Title-bar filename (Figma 104-3409): the basename, window-centered.
+  docFilenameEl.textContent = path.split('/').pop() ?? path;
   const result = await invoke<LoadResultDTO>('load_document', { path });
   hideEmptyState();
   addRecentFile(path);
@@ -823,6 +827,7 @@ window.addEventListener('DOMContentLoaded', () => {
   scrubberEl = document.querySelector<HTMLElement>('#scrubber')!;
   zoomContextEl = document.querySelector<HTMLElement>('#zoom-context')!;
   statusEl = document.querySelector<HTMLElement>('#status')!;
+  docFilenameEl = document.querySelector<HTMLElement>('#doc-filename')!;
   contentMapEl = document.querySelector<HTMLElement>('#content-map')!;
 
   applyContentScale(); // seed --content-scale at 100%

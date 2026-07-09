@@ -1,63 +1,72 @@
 import { test, expect, vi } from 'vitest';
 import { mountZoomScrubber } from './zoom-scrubber';
 
-test('renders five segments; +1/+2 are always disabled', () => {
+test('renders three ⌘-labelled segments in zoom-out order ⌘1 ⌘2 ⌘3', () => {
   const el = document.createElement('div');
   const teardown = mountZoomScrubber(el, { onChange: vi.fn() });
   const segs = el.querySelectorAll('[data-detent]');
-  expect([...segs].map((s) => s.getAttribute('data-detent'))).toEqual([
-    '-2',
-    '-1',
-    '0',
-    '+1',
-    '+2',
-  ]);
-  expect(el.querySelector('[data-detent="+1"]')?.hasAttribute('data-disabled')).toBe(true);
-  expect(el.querySelector('[data-detent="+2"]')?.hasAttribute('data-disabled')).toBe(true);
+  expect([...segs].map((s) => s.getAttribute('data-detent'))).toEqual(['1', '2', '3']);
+  expect([...segs].map((s) => s.textContent)).toEqual(['⌘1', '⌘2', '⌘3']);
   teardown();
 });
 
-test('disabledLevels also disables the given semantic levels', () => {
+test('+ is the FIRST control (toward ⌘1) and − the LAST (toward ⌘3)', () => {
+  const el = document.createElement('div');
+  const teardown = mountZoomScrubber(el, { onChange: vi.fn(), active: -1 });
+  expect((el.firstElementChild as HTMLElement).dataset.step).toBe('plus');
+  expect((el.lastElementChild as HTMLElement).dataset.step).toBe('minus');
+  teardown();
+});
+
+test('disabledLevels disables the matching segments', () => {
   const el = document.createElement('div');
   const teardown = mountZoomScrubber(el, { onChange: vi.fn(), disabledLevels: [-1, -2] });
-  expect(el.querySelector('[data-detent="-1"]')?.hasAttribute('data-disabled')).toBe(true);
-  expect(el.querySelector('[data-detent="-2"]')?.hasAttribute('data-disabled')).toBe(true);
-  expect(el.querySelector('[data-detent="0"]')?.hasAttribute('data-disabled')).toBe(false);
+  expect(el.querySelector('[data-detent="2"]')?.hasAttribute('data-disabled')).toBe(true);
+  expect(el.querySelector('[data-detent="3"]')?.hasAttribute('data-disabled')).toBe(true);
+  expect(el.querySelector('[data-detent="1"]')?.hasAttribute('data-disabled')).toBe(false);
   teardown();
 });
 
-test('clicking an enabled segment fires onChange(level); disabled fires nothing', () => {
+test('clicking an enabled segment fires onChange with its semantic level', () => {
   const el = document.createElement('div');
   const onChange = vi.fn();
   const teardown = mountZoomScrubber(el, { onChange, active: 0 });
-  (el.querySelector('[data-detent="-2"]') as HTMLElement).click();
+  (el.querySelector('[data-detent="3"]') as HTMLElement).click();
   expect(onChange).toHaveBeenCalledWith(-2);
-  (el.querySelector('[data-detent="+1"]') as HTMLElement).click();
-  (el.querySelector('[data-detent="+2"]') as HTMLElement).click();
-  expect(onChange).toHaveBeenCalledTimes(1);
+  (el.querySelector('[data-detent="2"]') as HTMLElement).click();
+  expect(onChange).toHaveBeenCalledWith(-1);
+  teardown();
+});
+
+test('a disabled segment fires nothing when clicked', () => {
+  const el = document.createElement('div');
+  const onChange = vi.fn();
+  const teardown = mountZoomScrubber(el, { onChange, disabledLevels: [-2], active: 0 });
+  (el.querySelector('[data-detent="3"]') as HTMLElement).click();
+  expect(onChange).not.toHaveBeenCalled();
   teardown();
 });
 
 test('active marks data-active on the current segment', () => {
   const el = document.createElement('div');
   const teardown = mountZoomScrubber(el, { onChange: vi.fn(), active: -1 });
-  expect(el.querySelector('[data-detent="-1"]')?.hasAttribute('data-active')).toBe(true);
-  expect(el.querySelector('[data-detent="0"]')?.hasAttribute('data-active')).toBe(false);
+  expect(el.querySelector('[data-detent="2"]')?.hasAttribute('data-active')).toBe(true);
+  expect(el.querySelector('[data-detent="1"]')?.hasAttribute('data-active')).toBe(false);
   teardown();
 });
 
-test('− / + end buttons step within the enabled range and fire onChange', () => {
+test('+ steps toward full text (0), − steps toward story (−2)', () => {
   const el = document.createElement('div');
   const onChange = vi.fn();
   const teardown = mountZoomScrubber(el, { onChange, active: -1 });
-  (el.querySelector('[data-step="minus"]') as HTMLElement).click(); // toward −2
-  expect(onChange).toHaveBeenLastCalledWith(-2);
-  (el.querySelector('[data-step="plus"]') as HTMLElement).click(); // toward 0
+  (el.querySelector('[data-step="plus"]') as HTMLElement).click();
   expect(onChange).toHaveBeenLastCalledWith(0);
+  (el.querySelector('[data-step="minus"]') as HTMLElement).click();
+  expect(onChange).toHaveBeenLastCalledWith(-2);
   teardown();
 });
 
-test('+ stops at 0 (never into +1/+2) and − stops at −2', () => {
+test('+ is disabled at 0 and − is disabled at −2', () => {
   const el = document.createElement('div');
   const onChange = vi.fn();
   const teardown = mountZoomScrubber(el, { onChange, active: 0 });
@@ -77,7 +86,7 @@ test('+ stops at 0 (never into +1/+2) and − stops at −2', () => {
   teardown2();
 });
 
-test('on untagged docs only level 0 is enabled; −/+ are disabled', () => {
+test('on untagged docs only ⌘1 is enabled; −/+ are disabled', () => {
   const el = document.createElement('div');
   const onChange = vi.fn();
   const teardown = mountZoomScrubber(el, {
@@ -94,7 +103,7 @@ test('teardown removes listeners', () => {
   const el = document.createElement('div');
   const onChange = vi.fn();
   const teardown = mountZoomScrubber(el, { onChange, active: 0 });
-  const seg = el.querySelector('[data-detent="-2"]') as HTMLElement;
+  const seg = el.querySelector('[data-detent="3"]') as HTMLElement;
   teardown();
   seg.click();
   expect(onChange).not.toHaveBeenCalled();
