@@ -8,15 +8,54 @@
 // `focus-mask.ts` is spec-verbatim (§4.3) and only ever *dims* the inactive
 // groups via `[data-dimmed]`; before a caret is placed nothing is dimmed, so
 // `:not([data-dimmed])` would border every group at once. It also only mounts at
-// k=0. The active group is therefore derived independently, from spec §2.5's own
-// anchor rule 2 — "the mounted node whose center is closest to the viewport
-// center" — via `resolveAnchor(null, boxes, center)` in `main.ts`'s existing
-// rAF-throttled scroll handler, which already holds the cached group boxes.
+// k=0. The active group is therefore derived independently, via `sectionAtTop`
+// below, in `main.ts`'s existing rAF-throttled scroll handler, which already
+// holds the cached group boxes.
+//
+// `sectionAtTop` is NOT the §2.5 zoom-transition anchor (`resolveAnchor` in
+// engine/anchor.ts, "nearest box CENTER to viewport center" — that one is
+// spec-locked and untouched, still used for cross-level scroll targeting).
+// This is a continuous-scroll scrollspy instead: earlier reuse of
+// `resolveAnchor` here caused the border to drift, worst around any section
+// padded out by a large code block. Root cause: `.pgroup` carries
+// `content-visibility: auto` (§4.2) for performance on long documents, so an
+// off-screen group's HEIGHT is a `contain-intrinsic-size` placeholder
+// (480px) until the browser renders it at least once — but the box cache is
+// a one-time snapshot, never refreshed as you scroll. A "nearest CENTER"
+// comparison depends on every box's height and was corrupted by that stale
+// guess; "which section's top boundary have I scrolled past" depends only on
+// `offsetTop` — the cumulative height of everything ABOVE it, which is
+// accurate for any group already visited in a normal top-to-bottom read —
+// so it never needs an off-screen box's height at all.
 //
 // D1 (opacity-only) holds: this is an INSTANT attribute swap. No CSS transition
 // may ever be attached to `border-color`.
 //
 // Tauri-free and store-free: plain DOM, so it unit-tests without a running app.
+
+/** The minimal shape `sectionAtTop` needs — deliberately NOT `offsetHeight`. */
+export interface TopBox {
+  id: string;
+  offsetTop: number;
+}
+
+/**
+ * The section for the continuous reading-view border: the LAST group (in
+ * document order) whose top has scrolled to or above `scrollTop` — i.e. the
+ * most recently passed section heading. `mounted` MUST already be in
+ * top-to-bottom document order (true of `cacheMapBoxes`'s `querySelectorAll`
+ * result in main.ts, a simple linear reading column). Defaults to the first
+ * group when `scrollTop` is above it (e.g. scrolled to the very top).
+ */
+export function sectionAtTop(mounted: readonly TopBox[], scrollTop: number): string | null {
+  if (mounted.length === 0) return null;
+  let best = mounted[0].id;
+  for (const box of mounted) {
+    if (box.offsetTop > scrollTop) break;
+    best = box.id;
+  }
+  return best;
+}
 
 /** `.pgroup` is keyed by `data-sid` at k=0/−1 and by `data-mid` at k=−2. */
 function findGroup(layer: HTMLElement, id: string): HTMLElement | null {

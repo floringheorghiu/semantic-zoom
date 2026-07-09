@@ -7,7 +7,6 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { Menu, Submenu, MenuItem, PredefinedMenuItem } from '@tauri-apps/api/menu';
 
 import { buildIndex, type ZoomLevel, type LookupTable, type ResolvedIndex } from './engine/schema';
-import { resolveAnchor } from './engine/anchor';
 import type { LoadResultDTO } from './engine/engine-a';
 import {
   renderLevel,
@@ -21,7 +20,7 @@ import { mountZoomScrubber } from './ui/zoom-scrubber';
 import { mountCaret } from './ui/caret';
 import { nextScale, SCALE_DEFAULT } from './ui/content-scale';
 import { mountFocusMask } from './ui/focus-mask';
-import { markActiveGroup, clearActiveGroups } from './ui/active-group';
+import { markActiveGroup, clearActiveGroups, sectionAtTop } from './ui/active-group';
 import { mountStatusBadge, type StatusBadgeHandle } from './ui/status-badge';
 import { mountEmptyState } from './ui/empty-state';
 import { getRecentFiles, addRecentFile } from './state/recent-files';
@@ -219,10 +218,14 @@ function cacheMapBoxes(): void {
  * scroll reads) — the accent border is derived from `mapBoxes` + the SAME
  * `scrollTop`/`clientHeight`, adding no read.
  *
- * `resolveAnchor(null, …)` is spec §2.5's anchor rule 2 verbatim: passing a null
- * caret forces the nearest-to-viewport-centre branch. The caret is deliberately
- * NOT consulted — the border must exist before any caret is placed, and
- * `focus-mask.ts` already owns the caret-driven dimming.
+ * The border uses `sectionAtTop` (ui/active-group.ts), NOT the §2.5
+ * zoom-transition anchor (`resolveAnchor`, "nearest box center" — that one
+ * stays untouched, used only for cross-level scroll targeting). Reusing
+ * `resolveAnchor` here used to make the border drift, worst around any
+ * section padded out by a large code block — see active-group.ts for why.
+ * The caret is deliberately NOT consulted for the border — it must exist
+ * before any caret is placed, and `focus-mask.ts` already owns the
+ * caret-driven dimming.
  */
 function updateMapFromScroll(): void {
   const layer = currentLayer();
@@ -232,7 +235,7 @@ function updateMapFromScroll(): void {
   const { scrollTop, clientHeight } = layer;
 
   // --- WRITES ---
-  const activeId = resolveAnchor(null, mapBoxes, scrollTop + clientHeight / 2);
+  const activeId = sectionAtTop(mapBoxes, scrollTop);
   markActiveGroup(layer, activeId, prevActiveGroupId);
   prevActiveGroupId = activeId;
 
