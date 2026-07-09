@@ -13,6 +13,7 @@ import {
   buildGroup,
   mountZoomTransitions,
   scrollCommands$,
+  topAlignedScrollTop,
   type ZoomTransitionState,
 } from './ui/viewport';
 import { buildHeader, titlePid } from './ui/header';
@@ -190,20 +191,25 @@ function currentLayer(): HTMLElement | null {
 
 /**
  * Scroll the current layer so `id`'s element (a paragraph, section, or
- * milestone — whichever exists) sits just below the top edge — never
- * centered. The write goes through the single rAF `scrollCommands$` queue
- * (spec §3.2) — `.scrollTop` is NEVER assigned here. Used by both the
- * content-map's click-to-navigate and ⌘↓/⌘↑'s step-to-next-item.
+ * milestone — whichever exists at `currentLevel`) sits just below the top
+ * edge — never centered. The write goes through the single rAF
+ * `scrollCommands$` queue (spec §3.2) — `.scrollTop` is NEVER assigned here.
+ * Used by both the content-map's click-to-navigate and ⌘↓/⌘↑'s
+ * step-to-next-item.
+ *
+ * Delegates the actual position read to `topAlignedScrollTop` (viewport.ts),
+ * NOT a raw `el.offsetTop` — a paragraph inside a currently off-screen
+ * section reads `offsetTop` 0 under `content-visibility: auto` (§4.2) unless
+ * that guard forces it visible first. Bug history: an earlier version of
+ * this function read `el.offsetTop` directly, which is exactly why ⌘↓/⌘↑
+ * moved the highlight but content never visibly scrolled — the computed
+ * target was always (incorrectly) 0.
  */
 function scrollItemToTop(id: string): void {
   const layer = currentLayer();
   if (!layer) return;
-  const el = layer.querySelector<HTMLElement>(
-    `.pnode[data-pid="${id}"], .pgroup[data-sid="${id}"], .pgroup[data-mid="${id}"]`,
-  );
-  if (!el) return;
-  const max = Math.max(0, layer.scrollHeight - layer.clientHeight);
-  const top = Math.min(Math.max(el.offsetTop - 24, 0), max);
+  const top = topAlignedScrollTop(layer, currentLevel, id);
+  if (top === null) return;
   scrollCommands$.next({ el: layer, top });
 }
 
