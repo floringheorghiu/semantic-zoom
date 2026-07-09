@@ -32,6 +32,21 @@ export function nextParagraph(pids: string[], current: string | null, dir: 1 | -
 }
 
 /**
+ * The navigable paragraph ids, in document order, LIVE from the DOM rather
+ * than `table.order.paragraphs`. These deliberately differ: the paragraph
+ * promoted to the document title (`titlePid`, header.ts) is skipped when
+ * `buildGroup` renders a section's body (it's shown once, in the header,
+ * not twice) — so it has no `.pnode` at all. Deriving the list from the data
+ * side would include it, land the caret and ⌘↓/⌘↑ on a paragraph with
+ * nothing to mark or scroll to, and silently do nothing on that step.
+ */
+export function livePids(viewport: HTMLElement): string[] {
+  return Array.from(viewport.querySelectorAll<HTMLElement>('.pnode'))
+    .map((el) => el.dataset.pid)
+    .filter((pid): pid is string => !!pid);
+}
+
+/**
  * Mount the read-only caret on a viewport.
  *
  * - Click on (or within) a `.pnode` → resolve the nearest ancestor `.pnode`,
@@ -51,11 +66,6 @@ export function mountCaret(
   // All outgoing caret placements funnel through one auditTime(16) gate.
   const out$ = new Subject<{ pid: string; offset: number }>();
   const sub = out$.pipe(auditTime(16)).subscribe(({ pid, offset }) => dispatch(pid, offset));
-
-  const currentPids = (): string[] =>
-    Array.from(viewport.querySelectorAll<HTMLElement>('.pnode'))
-      .map((el) => el.dataset.pid)
-      .filter((pid): pid is string => !!pid);
 
   /** Move the `data-caret` marker to `pid` and queue a throttled dispatch. */
   function placeCaret(pid: string): void {
@@ -83,7 +93,7 @@ export function mountCaret(
   const onKeydown = (e: KeyboardEvent): void => {
     const dir = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0;
     if (dir === 0) return;
-    const pids = currentPids();
+    const pids = livePids(viewport);
     if (pids.length === 0) return;
     e.preventDefault();
     placeCaret(nextParagraph(pids, caretPid(), dir as 1 | -1));

@@ -18,7 +18,7 @@ import {
 } from './ui/viewport';
 import { buildHeader, titlePid } from './ui/header';
 import { mountZoomScrubber } from './ui/zoom-scrubber';
-import { mountCaret, nextParagraph } from './ui/caret';
+import { mountCaret, nextParagraph, livePids } from './ui/caret';
 import { nextScale, SCALE_DEFAULT } from './ui/content-scale';
 import { mountFocusMask } from './ui/focus-mask';
 import { markActiveGroup, clearActiveGroups, sectionAtTop } from './ui/active-group';
@@ -229,13 +229,20 @@ function scrollItemToTop(id: string): void {
  * border is moved explicitly here — mirroring what a scroll would
  * eventually settle on, but synchronously, so a second rapid ⌘↓/⌘↑ steps
  * from the right place instead of a stale one.
+ *
+ * At k=0 the step list is `livePids` (the actually-rendered `.pnode`s), NOT
+ * `currentTable.order.paragraphs` — same reason plain arrow-key caret
+ * movement already uses it (caret.ts): the document's very first paragraph
+ * is promoted to the page title and never rendered as a `.pnode` in the
+ * body, so a data-order list lands a step on a paragraph with nothing to
+ * mark or scroll to, silently doing nothing on that one step.
  */
 function navigateItem(dir: 1 | -1): void {
   if (!currentTable) return;
 
   if (currentLevel === 0) {
     const current = snapshot().caret.paragraphId;
-    const next = nextParagraph(currentTable.order.paragraphs, current, dir);
+    const next = nextParagraph(livePids(viewportEl), current, dir);
     if (!next || next === current) return;
     markCaret(next);
     caretIsCurrent = true;

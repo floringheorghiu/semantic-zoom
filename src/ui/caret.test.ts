@@ -1,5 +1,5 @@
 import { test, expect, vi, beforeEach, afterEach } from 'vitest';
-import { nextParagraph, mountCaret } from './caret';
+import { nextParagraph, mountCaret, livePids } from './caret';
 
 // --- nextParagraph (pure, synchronous) --------------------------------------
 
@@ -27,6 +27,33 @@ test('nextParagraph handles current not in list (treats as null)', () => {
 test('nextParagraph handles empty pids', () => {
   expect(nextParagraph([], 'a', 1)).toBe('a');
   expect(nextParagraph([], null, 1)).toBe('');
+});
+
+// --- livePids ----------------------------------------------------------------
+// Regression: main.ts's ⌘↓/⌘↑ originally stepped over `table.order.paragraphs`
+// (the full data-order list) instead of this DOM-derived one. The document's
+// first paragraph is promoted to the page title and never rendered as a
+// `.pnode` (buildGroup skips it), so stepping onto it landed on a paragraph
+// with nothing to mark or scroll to — the very first ⌘↓ from a fresh
+// (no-caret) state silently did nothing. Plain arrow-key movement never had
+// this bug because it was already DOM-derived; ⌘↓/⌘↑ now shares this exact
+// function so the two can never disagree on what's navigable.
+
+test('livePids returns only .pnode ids that actually exist in the DOM, in document order', () => {
+  const vp = makeViewport();
+  expect(livePids(vp)).toEqual(['P-11111111-0', 'P-22222222-0']);
+});
+
+test('livePids excludes a paragraph with no rendered .pnode (e.g. the promoted title)', () => {
+  const vp = makeViewport();
+  // Simulate the title case: its pid exists in the DATA, but buildGroup never
+  // rendered a .pnode for it — there is nothing in the DOM to find.
+  expect(livePids(vp)).not.toContain('P-title-not-rendered-0');
+});
+
+test('livePids returns [] when nothing is mounted', () => {
+  const vp = document.createElement('main');
+  expect(livePids(vp)).toEqual([]);
 });
 
 // --- mountCaret (DOM + throttled dispatch) ----------------------------------
