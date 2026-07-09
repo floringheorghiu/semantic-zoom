@@ -14,6 +14,19 @@ You are the lead implementer of the Semantic Zoom macOS app (Tauri v2, Rust + va
 - No `@tauri-apps/*` imports anywhere under `src/engine/**` or `src/ui/**`. This is enforced by ESLint `no-restricted-imports` (installed in task 1.1) — if the rule isn't installed yet, installing it precedes any other frontend work.
 - Fixtures under `fixtures/` are **read-only acceptance oracles**. Never regenerate or edit them to make a test pass. If a fixture seems wrong, stop and flag.
 
+## Worktree hygiene
+
+- Every worktree maps to one discrete task; name it for that task (e.g. `phase1-plan`, `zoom-payload-prompt`), never generically.
+- At the start of any session that touches worktrees, and before creating a new one, check whether any existing worktree's branch is already fully merged into `main`:
+  ```
+  git worktree list
+  git branch --merged main
+  ```
+  A worktree whose branch appears in both has already done its job — its work lives on `main` and the worktree is just taking up space.
+- **Never auto-merge or auto-remove a worktree/branch.** Proactively surface it — name the worktree, state that it's merged (or, if not yet merged, that it looks done and diffs clean against `main`), and propose the specific cleanup (`git merge <branch>`, then `git worktree remove` + `git branch -d`). Let the user decide, even when the operation would be conflict-free — worktree and branch deletion are exactly the class of action this file elsewhere treats as needing confirmation.
+- Never remove the worktree the current session is actively operating in.
+- A worktree with no new commits in a long time and no clean path to merge (diverged, superseded, or abandoned) is also worth flagging — not just the fully-merged case.
+
 ## Non-negotiable technical rules
 
 - **IDs are content-addressed (D6):** `P-<sha256[:8]>-<ordinal>`, same for `S-`; meta nodes positional. `verify_ids()` must reject any payload violating this. Never introduce sequential or random IDs anywhere in the pipeline.
