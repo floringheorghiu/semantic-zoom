@@ -297,7 +297,17 @@ export function mountedBoxes(layer: HTMLElement, level: ZoomLevel): MountedBox[]
   return boxes;
 }
 
-/** Find the element carrying `id` at `level` inside `layer`. */
+/**
+ * Find the element carrying `id` at `level` inside `layer` — the level here
+ * means "the zoom-transition anchor's own level," where the TARGET NODE TYPE
+ * is a paragraph at 0, a section at −1, a milestone at −2 (spec §2.5's
+ * mapAcrossLevels output). Used ONLY by `measureTargetTop`; do NOT reuse this
+ * for content-map ids — the content-map's bars are SECTIONS at BOTH k=0 and
+ * k=−1 (see content-map.ts's buildMapModel), which is a different id-space
+ * than "the zoom target at level 0," and passing the current level here for
+ * a content-map id silently searches the wrong selector and finds nothing.
+ * `findAnyNode` below is level-agnostic and correct for that case.
+ */
 function findNode(layer: HTMLElement, level: ZoomLevel, id: string): HTMLElement | null {
   const selector =
     level === 0
@@ -309,37 +319,40 @@ function findNode(layer: HTMLElement, level: ZoomLevel, id: string): HTMLElement
 }
 
 /**
- * Read `targetId`'s box (`offsetTop`/`offsetHeight`) at `level` inside
- * `layer`, or null if the node isn't in this layer.
+ * Find whichever element carries `id` — a paragraph, section, or milestone —
+ * without needing to know which kind it is or what level is mounted. Safe
+ * because D6 ids never collide across these three: paragraphs are `P-*`,
+ * sections `S-*`, milestones are positional (`M1`, `M2`, ...) — disjoint from
+ * both. Used by `topAlignedScrollTop` (⌘↓/⌘↑ and the content-map's
+ * click-to-navigate), where the id's "kind" already tells you everything
+ * `findNode`'s level parameter would, without the risk of the two
+ * disagreeing (see `findNode`'s doc comment for the bug that caused).
+ */
+function findAnyNode(layer: HTMLElement, id: string): HTMLElement | null {
+  return layer.querySelector<HTMLElement>(
+    `.pnode[data-pid="${id}"], .pgroup[data-sid="${id}"], .pgroup[data-mid="${id}"]`,
+  );
+}
+
+/**
+ * Read `el`'s box (`offsetTop`/`offsetHeight`), forcing its `.pgroup`
+ * ancestor to render for the duration if it isn't already its own group.
  *
  * `.pgroup` carries `content-visibility: auto` (§4.2, D8), so a group whose
- * contents the browser has SKIPPED gives its descendants no layout box at all:
- * `offsetParent` is null and `el.offsetTop` reads **0**. At target −1/−2 the
- * node we measure IS the `.pgroup` (which always has a box), but at target 0 it
- * is a `.pnode` inside one — so an unguarded read returned 0.
+ * contents the browser has SKIPPED gives its descendants no layout box at
+ * all: `offsetParent` is null and `el.offsetTop` reads **0**. A section or
+ * milestone target IS its own `.pgroup` (always has a box); a paragraph
+ * target is a `.pnode` INSIDE one — so an unguarded read returned 0.
  *
- * The fix is to force just the target's OWN group to render for the duration of
- * the read, then restore whatever was there. Exactly one group is un-skipped,
- * so this stays the "one contained layout" §2.5 asks for — not a full-tree
- * relayout. Shared by `measureTargetTop` (centers the target — zoom
- * transitions) and `topAlignedScrollTop` (aligns it to the top — ⌘↓/⌘↑ item
- * navigation and the content-map's click-to-navigate). The latter used to
- * read `el.offsetTop` directly with no such guard, which is exactly why
- * ⌘↓/⌘↑ moved the highlight but never actually scrolled once the target
- * paragraph's section was off-screen: the computed target was always 0,
- * indistinguishable from "no-op" whenever the view happened to already be
- * near the top.
+ * The fix is to force just the target's OWN group to render for the
+ * duration of the read, then restore whatever was there. Exactly one group
+ * is un-skipped, so this stays the "one contained layout" §2.5 asks for —
+ * not a full-tree relayout. Shared by `measureTargetTop` (centers the
+ * target — zoom transitions) and `topAlignedScrollTop` (aligns it to the
+ * top — ⌘↓/⌘↑ item navigation and the content-map's click-to-navigate).
  */
-function measureTargetBox(
-  layer: HTMLElement,
-  level: ZoomLevel,
-  targetId: string,
-): { offsetTop: number; offsetHeight: number } | null {
-  const el = findNode(layer, level, targetId);
-  if (!el) return null;
-
+function measureBox(el: HTMLElement): { offsetTop: number; offsetHeight: number } {
   const group = el.closest<HTMLElement>('.pgroup');
-  // At −1/−2 the target IS its group: it already has a box, nothing to force.
   const forced = group && group !== el ? group : null;
   const saved = forced ? forced.style.contentVisibility : '';
   if (forced) forced.style.contentVisibility = 'visible';
@@ -355,16 +368,16 @@ function measureTargetBox(
 
 /**
  * Measure where `layer` must scroll to CENTER the target node, or null if the
- * node isn't in this layer. Used by the zoom-transition settle (§2.5) — see
- * `measureTargetBox` for the content-visibility guard this relies on.
+ * node isn't in this layer. Used by the zoom-transition settle (§2.5).
  */
 export function measureTargetTop(
   layer: HTMLElement,
   level: ZoomLevel,
   targetId: string,
 ): number | null {
-  const box = measureTargetBox(layer, level, targetId);
-  if (!box) return null;
+  const el = findNode(layer, level, targetId);
+  if (!el) return null;
+  const box = measureBox(el);
   // --- reads (all of them, together) ---
   const clientHeight = layer.clientHeight;
   const scrollHeight = layer.scrollHeight;
@@ -372,18 +385,16 @@ export function measureTargetTop(
 }
 
 /**
- * Where `layer` must scroll so the target node's TOP sits just below the top
- * edge — never centered — or null if the node isn't in this layer. Used by
- * ⌘↓/⌘↑ item navigation and the content-map's click-to-navigate; see
- * `measureTargetBox` for the content-visibility guard this relies on.
+ * Where `layer` must scroll so `targetId`'s element — a paragraph, section,
+ * or milestone, whichever it is — sits just below the top edge — never
+ * centered — or null if it isn't in this layer. Used by ⌘↓/⌘↑ item
+ * navigation and the content-map's click-to-navigate. Deliberately NOT
+ * level-parameterized like `measureTargetTop` — see `findAnyNode`.
  */
-export function topAlignedScrollTop(
-  layer: HTMLElement,
-  level: ZoomLevel,
-  targetId: string,
-): number | null {
-  const box = measureTargetBox(layer, level, targetId);
-  if (!box) return null;
+export function topAlignedScrollTop(layer: HTMLElement, targetId: string): number | null {
+  const el = findAnyNode(layer, targetId);
+  if (!el) return null;
+  const box = measureBox(el);
   // --- reads (all of them, together) ---
   const clientHeight = layer.clientHeight;
   const scrollHeight = layer.scrollHeight;
