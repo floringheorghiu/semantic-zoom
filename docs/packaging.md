@@ -77,3 +77,35 @@ something else wasn't isolated further. If you hit the same thing, that's the
 starting point — the config and generated asset are confirmed correct, so
 look at the AppleScript's background-setting step specifically
 (`template.applescript` inside the vendored `bundle_dmg.sh`).
+
+## Publishing a build to GitHub (Releases)
+
+Built DMGs are shared as **GitHub Releases**, never committed into the repo
+(binary blobs would permanently bloat the git history). Anyone with access to
+the repo can download from the release page's **Assets** section:
+https://github.com/floringheorghiu/semantic-zoom/releases
+
+Routine for shipping a new version:
+
+```sh
+# 1. Bump the version in src-tauri/tauri.conf.json ("version" field),
+#    commit + merge to main + push as usual.
+# 2. Build and verify:
+npm run dmg
+hdiutil verify src-tauri/target/release/bundle/dmg/semantic-zoom_<ver>_aarch64.dmg
+# 3. Publish (tag = version, DMG attached):
+gh release create v<ver> --target main \
+  --title "Semantic Zoom <ver> (Apple Silicon)" \
+  --notes "what changed since the last release" \
+  src-tauri/target/release/bundle/dmg/semantic-zoom_<ver>_aarch64.dmg
+```
+
+The app is **not code-signed/notarized** (no Apple Developer account wired
+in), so every release's notes must carry the first-launch instructions:
+right-click → Open, or `xattr -cr /Applications/semantic-zoom.app` if
+Gatekeeper claims the app "is damaged". v0.1.0's notes have the canonical
+wording to copy from.
+
+A GitHub Actions workflow could automate the build on each tag, but macOS
+runners bill at 10× minutes on private repos and a Tauri release build runs
+long — building locally and uploading is the cheaper default at this stage.
