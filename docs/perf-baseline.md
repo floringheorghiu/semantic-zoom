@@ -109,8 +109,14 @@ devtools console on every zoom. No manual instrumentation is needed anymore:
 3. Open devtools, trigger several level swaps (⌘1/⌘2/⌘3), read the logged
    deltas, record the worst case here.
 
+**First live sample (2026-07-09, dev build, Apple M1 Max):** the user's
+console session captured `[perf] level-swap 0→-1: 233.0ms` — within the
+≤250 ms budget, on an UNOPTIMIZED dev build, but on a ~25-section document,
+not the 1 MB synthetic this task specifies. Encouraging, not conclusive.
+
 Result: **TBD (measure on target hardware)** — instrumentation is in place
-(full test suite stays green), but the actual number has not been captured.
+and now live-verified to report; the budget number on `perf/synthetic-1mb.md`
+has not been captured.
 This dev machine has no Xcode/Instruments installed (`xcrun --find
 instruments` finds nothing, no `Xcode*.app` under `/Applications`), and this
 is a headless background Claude Code session, so GUI automation is also
