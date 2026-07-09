@@ -187,6 +187,15 @@ function resetActiveGroup(): void {
  */
 function currentLayer(): HTMLElement | null {
   const layers = viewportEl.querySelectorAll<HTMLElement>('.level-layer');
+  if (import.meta.env.DEV && layers.length > 1) {
+    console.debug(
+      `[nav-debug] currentLayer(): ${layers.length} .level-layer elements mounted ` +
+        `(expected 1 outside a transition) — ` +
+        Array.from(layers)
+          .map((l) => `level=${l.dataset.level} scrollTop=${l.scrollTop} opacity=${getComputedStyle(l).opacity}`)
+          .join(' | '),
+    );
+  }
   return layers.length ? layers[layers.length - 1] : null;
 }
 
@@ -217,10 +226,27 @@ function currentLayer(): HTMLElement | null {
  */
 function scrollItemToTop(id: string, framesLeft = 5): void {
   const layer = currentLayer();
-  if (!layer) return;
+  if (!layer) {
+    if (import.meta.env.DEV) console.debug(`[nav-debug] scrollItemToTop(${id}): no currentLayer()`);
+    return;
+  }
   const top = topAlignedScrollTop(layer, id);
-  if (top === null) return;
-  if (Math.abs(layer.scrollTop - top) <= 1) return; // converged
+  if (import.meta.env.DEV) {
+    console.debug(
+      `[nav-debug] scrollItemToTop(${id}, framesLeft=${framesLeft}): ` +
+        `layer.scrollTop=${layer.scrollTop} computedTop=${top} ` +
+        `layer.scrollHeight=${layer.scrollHeight} layer.clientHeight=${layer.clientHeight} ` +
+        `level-layer-count=${viewportEl.querySelectorAll('.level-layer').length}`,
+    );
+  }
+  if (top === null) {
+    if (import.meta.env.DEV) console.debug(`[nav-debug] scrollItemToTop(${id}): target element not found in layer`);
+    return;
+  }
+  if (Math.abs(layer.scrollTop - top) <= 1) {
+    if (import.meta.env.DEV) console.debug(`[nav-debug] scrollItemToTop(${id}): treated as already converged, no scroll issued`);
+    return; // converged
+  }
   scrollCommands$.next({ el: layer, top }); // the single rAF-scheduled queue
   if (framesLeft > 0) {
     requestAnimationFrame(() => scrollItemToTop(id, framesLeft - 1));
@@ -257,7 +283,15 @@ function navigateItem(dir: 1 | -1): void {
   const ids = currentLevel === -2 ? currentTable.order.meta : currentTable.order.sections;
   const current = prevActiveGroupId;
   const next = nextParagraph(ids, current, dir);
-  if (!next || next === current) return;
+  if (import.meta.env.DEV) {
+    console.debug(
+      `[nav-debug] navigateItem(dir=${dir}): currentLevel=${currentLevel} current=${current} next=${next} idsLength=${ids.length}`,
+    );
+  }
+  if (!next || next === current) {
+    if (import.meta.env.DEV) console.debug('[nav-debug] navigateItem: no-op (no next, or next === current)');
+    return;
+  }
   const layer = currentLayer();
   if (layer) markActiveGroup(layer, next, current);
   prevActiveGroupId = next;
