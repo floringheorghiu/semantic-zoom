@@ -510,6 +510,8 @@ function runTransition(
       return;
     }
     const source = st.level;
+    // Task 3.4 (docs/perf-baseline.md): dev-only level-swap timing, dispatch → settle.
+    const swapStart = import.meta.env.DEV ? performance.now() : 0;
     const oldLayer = viewport.querySelector<HTMLElement>('.level-layer');
 
     // --- Anchor at the SOURCE level (cached offsets of the current layer). ---
@@ -588,6 +590,10 @@ function runTransition(
         oldLayer?.remove();
         viewport.removeAttribute('data-transitioning');
         viewport.dataset.zoom = String(target);
+        if (import.meta.env.DEV) {
+          const ms = (performance.now() - swapStart).toFixed(1);
+          console.info(`[perf] level-swap ${source}→${target}: ${ms}ms (budget ≤250ms)`);
+        }
         // Transition has settled into its FINAL layer: let the owner (main.ts)
         // (re)mount caret + focus-mask against the layer that actually remains.
         onSettled?.(target);

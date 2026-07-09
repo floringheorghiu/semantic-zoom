@@ -31,3 +31,6 @@ fixtures/roundtrip-expected.json
 
 # Large generated perf harness artifact (regenerate with `node perf/gen-synthetic.mjs`)
 perf/synthetic-1mb.md
+
+# Task 2.5 stress fixture (regenerate with `node perf/gen-stress-fixture.mjs`)
+perf/stress-fixture.md
