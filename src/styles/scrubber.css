@@ -1,7 +1,8 @@
-/* Bottom zoom scrubber (plan §4.3). A fully-rounded segmented pill floating in
-   a bottom footer bar: round −/+ end buttons flank five segments −2 −1 0 +1 +2.
-   Tokens only. The disabled +1/+2 cells are a visible affordance for future
-   content-magnify (D-B) and are never wired. */
+/* Bottom zoom scrubber (Figma 104-3409). A fully-rounded white pill of three
+   ⌘-labelled segments ⌘1 ⌘2 ⌘3 (a left→right zoom-OUT progression), flanked
+   by a round `+` on the left (toward ⌘1 / full text) and `−` on the right
+   (toward ⌘3 / story). The active segment fills with the content-map purple
+   so the toolbar and the map read as one system. Tokens only. */
 
 /* Footer bar sits in the app column flow BELOW #viewport, so it never occludes
    the reading area — the viewport simply shrinks to make room. */
@@ -36,13 +37,13 @@
   align-items: center;
   gap: 4px;
   padding: 5px;
-  background: var(--sz-track);
+  background: var(--sz-bg);
   border: 1px solid var(--sz-border);
   border-radius: var(--sz-radius-pill);
   box-shadow: var(--sz-shadow-pill);
 }
 
-/* Round − / + end buttons. */
+/* Round + / − end buttons. */
 .zoom-scrubber .scrubber-end {
   appearance: none;
   border: 0;
@@ -67,16 +68,21 @@
   cursor: default;
 }
 
-/* Segments. */
+/* Segments ⌘1 / ⌘2 / ⌘3. */
 .zoom-scrubber .scrubber-segment {
   appearance: none;
   border: 0;
   background: transparent;
-  font: 500 12px/1 var(--sz-font);
+  font: 500 12px/16px var(--sz-font);
   color: var(--sz-muted);
   padding: 6px 16px;
   border-radius: var(--sz-radius-pill);
   cursor: pointer;
+}
+
+/* The ⌘ glyph reads a step quieter than its number at every state. */
+.zoom-scrubber .scrubber-segment .seg-cmd {
+  color: var(--sz-muted-50);
 }
 
 .zoom-scrubber .scrubber-segment:hover:not([data-disabled]):not([data-active]) {
@@ -84,9 +90,13 @@
 }
 
 .zoom-scrubber .scrubber-segment[data-active] {
-  background: #fff;
-  color: var(--sz-ink);
+  background: var(--sz-map-bar-active);
+  color: #fff;
   box-shadow: var(--sz-shadow-pill);
+}
+
+.zoom-scrubber .scrubber-segment[data-active] .seg-cmd {
+  color: rgba(255, 255, 255, 0.75);
 }
 
 .zoom-scrubber .scrubber-segment[data-disabled] {
@@ -95,7 +105,12 @@
 }
 
 :root[data-theme="dark"] .zoom-scrubber .scrubber-segment[data-active] {
-  background: rgba(255, 255, 255, 0.14);
+  /* --sz-map-bar-active is the luminous dark-map bar; ink text keeps 4.5:1. */
+  color: #1e1e1e;
+}
+
+:root[data-theme="dark"] .zoom-scrubber .scrubber-segment[data-active] .seg-cmd {
+  color: rgba(30, 30, 30, 0.65);
 }
 
 :root[data-theme="dark"] .zoom-scrubber .scrubber-end:hover:not([data-disabled]) {
