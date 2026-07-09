@@ -133,6 +133,43 @@ export function buildLevel(
  * group's reconcile key (which derives from `table.sections[sid].children`), so
  * D7 keyed reuse is unaffected.
  */
+const CHEVRON_SVG =
+  '<svg class="chevron" viewBox="0 0 12 8" width="12" height="8" aria-hidden="true" focusable="false">' +
+  '<path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+/**
+ * Cap a code block's height (~200px) with a chevron toggle to expand it.
+ * Always added, even to a block short enough that collapsing changes
+ * nothing visible: whether a block's TRUE height exceeds the cap can't be
+ * measured reliably here, since `buildGroup` runs on a DETACHED element
+ * (before it's ever laid out) — and even once mounted, `.pgroup` carries
+ * `content-visibility: auto` (§4.2), so a `<pre>` inside a currently
+ * off-screen group would read a false `scrollHeight` anyway (the same
+ * failure mode `mountedBoxes` in this file already works around
+ * elsewhere). A harmless no-op toggle on a short block is a fair trade for
+ * not reintroducing that whole class of bug here.
+ */
+function wrapCodeBlock(pre: HTMLElement): void {
+  const wrap = document.createElement('div');
+  wrap.className = 'code-wrap';
+  pre.replaceWith(wrap);
+  wrap.appendChild(pre);
+
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'code-expand-toggle';
+  toggle.setAttribute('aria-label', 'Toggle full code block');
+  toggle.setAttribute('aria-expanded', 'false');
+  toggle.innerHTML = CHEVRON_SVG;
+  toggle.addEventListener('click', () => {
+    const expanded = wrap.hasAttribute('data-expanded');
+    if (expanded) wrap.removeAttribute('data-expanded');
+    else wrap.setAttribute('data-expanded', '');
+    toggle.setAttribute('aria-expanded', String(!expanded));
+  });
+  wrap.appendChild(toggle);
+}
+
 export function buildGroup(
   table: LookupTable,
   _index: ResolvedIndex,
@@ -164,6 +201,10 @@ export function buildGroup(
       scroll.className = 'table-scroll';
       tbl.replaceWith(scroll);
       scroll.appendChild(tbl);
+    }
+    // Cap long code blocks to a fixed peek height with a chevron to expand.
+    for (const pre of node.querySelectorAll<HTMLElement>('pre')) {
+      wrapCodeBlock(pre);
     }
     group.appendChild(node);
   }

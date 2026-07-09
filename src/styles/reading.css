@@ -332,6 +332,58 @@
   border-radius: 6px;
 }
 
+/* Every code block is wrapped in `.code-wrap` (viewport.ts's `wrapCodeBlock`)
+   with a chevron toggle below it — collapsed by default to a ~200px peek. */
+.code-wrap pre {
+  margin: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.code-wrap:not([data-expanded]) pre {
+  max-height: 200px;
+  overflow: hidden;
+  position: relative;
+}
+
+/* A soft fade at the bottom edge hints there's more content below. */
+.code-wrap:not([data-expanded]) pre::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 36px;
+  background: linear-gradient(to bottom, transparent, var(--sz-track));
+  pointer-events: none;
+}
+
+.code-expand-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 5px 0;
+  margin: 0;
+  background: var(--sz-track);
+  border: 1px solid var(--sz-border);
+  border-top: none;
+  border-radius: 0 0 6px 6px;
+  color: var(--sz-muted);
+  cursor: pointer;
+}
+
+.code-expand-toggle:hover {
+  color: var(--sz-ink);
+}
+
+/* Instant flip — an un-transitioned `transform` swap, not an animation
+   (D1 governs the zoom crossfade specifically; there is no transition
+   property here for it to violate). */
+.code-wrap[data-expanded] .code-expand-toggle .chevron {
+  transform: rotate(180deg);
+}
+
 /* ---------- Raw-mode table legibility (Ask 4) ---------- */
 
 .table-scroll {
