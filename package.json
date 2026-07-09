@@ -1,7 +1,7 @@
 {
   "name": "semantic-zoom",
   "private": true,
-  "version": "0.3.2",
+  "version": "0.3.3",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -18,7 +18,10 @@
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-opener": "^2",
+    "rehype-stringify": "^10.0.1",
+    "remark-gfm": "^4.0.1",
     "remark-parse": "^11.0.0",
+    "remark-rehype": "^11.1.2",
     "rxjs": "^7.8.2",
     "unified": "^11.0.5",
     "unist-util-visit": "^5.1.0"
