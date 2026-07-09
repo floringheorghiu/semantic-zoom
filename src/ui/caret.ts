@@ -9,7 +9,10 @@ import { Subject } from 'rxjs';
 import { auditTime } from 'rxjs/operators';
 
 /**
- * Pure helper: the next/prev pid in document order, CLAMPED at the ends.
+ * Pure helper: the next/prev id in a document-order list, CLAMPED at the
+ * ends. Despite the name, this is generic over any id list in document
+ * order — main.ts also reuses it for ⌘↓/⌘↑ item-stepping over
+ * `order.sections`/`order.meta`, not just `order.paragraphs`.
  *
  * - `current === null` (or not present in `pids`): returns the first pid for
  *   `dir === 1`, the last for `dir === -1` (entering the document from an end).
