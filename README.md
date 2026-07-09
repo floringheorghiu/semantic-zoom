@@ -79,7 +79,7 @@ Architecture ground rules live in [`CLAUDE.md`](CLAUDE.md); the full design is i
 - [x] Payload contract: schema, Rust/TS mirror structs, content-addressed IDs, validation (`docs/payload-format.md`)
 - [x] Native payload extraction with graceful degradation (`Native` / `Untagged` / `Corrupt`)
 - [x] All three zoom levels with spatially anchored, 200 ms crossfade transitions
-- [x] Focus mask: the section under your caret reads at full contrast, everything else dims
+- [x] Focus mask — built and shipped, then **disabled by product decision** (2026-07-09): dimming everything outside the caret's section read as annoying in real use and fought ⌘↓/⌘↑ section navigation. Code and tests remain in `src/ui/focus-mask.ts`; re-enable path documented at `remountFocusMask` in `src/main.ts`
 - [x] File watcher + silent hot reload with reading-position survival across edits
 - [x] Content map with scroll-synced highlight and click-to-jump
 - [x] Empty state, recent files, ⌘O / ⌘W, ⌘↓ / ⌘↑ section navigation, collapsible code blocks

@@ -20,7 +20,7 @@ import { buildHeader, titlePid } from './ui/header';
 import { mountZoomScrubber } from './ui/zoom-scrubber';
 import { mountCaret, nextParagraph } from './ui/caret';
 import { nextScale, SCALE_DEFAULT } from './ui/content-scale';
-import { mountFocusMask } from './ui/focus-mask';
+// mountFocusMask import removed with the mask disable — see remountFocusMask.
 import { markActiveGroup, clearActiveGroups, sectionAtTop } from './ui/active-group';
 import { mountStatusBadge, type StatusBadgeHandle } from './ui/status-badge';
 import { mountEmptyState } from './ui/empty-state';
@@ -490,17 +490,24 @@ function markCaret(pid: string): void {
 }
 
 /**
- * (Re)mount the group focus-mask after a render. It only makes sense at k=0 for
- * a native doc (where `.pgroup[data-sid]` groups exist and a caret can pick an
- * active group); at other levels or for raw/untagged docs we tear down and skip.
- * mountFocusMask subscribes to the store, so a teardown-then-mount is idempotent.
+ * Focus mask (§4.3) DISABLED by product decision, 2026-07-09: in live use the
+ * caret-driven dimming read as annoying — everything except the last-clicked
+ * section sat at reduced opacity, which fought the new ⌘↓/⌘↑ section
+ * navigation instead of helping it. The module and its tests are kept intact
+ * (src/ui/focus-mask.ts); to re-enable, restore the mountFocusMask import and
+ * the original body:
+ *
+ *   focusMaskTeardown?.();
+ *   focusMaskTeardown = null;
+ *   if (!(currentTable && currentLevel === 0)) return;
+ *   focusMaskTeardown = mountFocusMask(viewportEl);
+ *
+ * The function is kept (as a teardown-only no-op) so every existing call site
+ * — render, zoom settle, hot reload — stays wired for that re-enable.
  */
 function remountFocusMask(): void {
   focusMaskTeardown?.();
   focusMaskTeardown = null;
-  const nativeAtK0 = !!currentTable && currentLevel === 0;
-  if (!nativeAtK0) return;
-  focusMaskTeardown = mountFocusMask(viewportEl);
 }
 
 /**
