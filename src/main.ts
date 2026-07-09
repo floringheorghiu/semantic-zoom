@@ -85,9 +85,13 @@ let caretIsCurrent = false;
 let viewportEl: HTMLElement;
 let scrubberEl: HTMLElement;
 let zoomContextEl: HTMLElement;
+let zoomFooterEl: HTMLElement;
 let statusEl: HTMLElement;
 let docFilenameEl: HTMLElement;
 let contentMapEl: HTMLElement;
+
+/** Window-centered title-bar text (Figma 104-3409 slot) when no document is open. */
+const APP_NAME = 'Semantic Zoom';
 
 /** Levels available given the current document. */
 function availableLevels(): ZoomLevel[] {
@@ -588,7 +592,20 @@ function applyResult(result: LoadResultDTO): void {
   }
 }
 
-/** Show the pre-open placeholder (Figma 111:3743) in the empty viewport. */
+/**
+ * Show the pre-open placeholder (Figma 111:3743) in the empty viewport.
+ *
+ * Also owns the two other "no document" chrome states, so there is exactly
+ * one place that flips them together instead of three call sites agreeing by
+ * convention:
+ *  - the window-centered title-bar slot (Figma 104-3409) falls back to the
+ *    app name, the same slot `openFile` later overwrites with the filename;
+ *  - `#zoom-footer` (the real, functional level scrubber — meaningless with
+ *    no document loaded) is hidden so it can't stack a second, empty-looking
+ *    padded bar directly above the empty state's own shortcut-hints footer.
+ *    `hideEmptyState` (called the moment a file opens) restores it — this
+ *    must NEVER stay hidden once a document is open.
+ */
 function showEmptyState(): void {
   emptyStateTeardown?.();
   emptyStateTeardown = mountEmptyState(viewportEl, {
@@ -597,11 +614,14 @@ function showEmptyState(): void {
     onSelectRecent: (path) => void openFile(path),
     version: __APP_VERSION__,
   }).teardown;
+  docFilenameEl.textContent = APP_NAME;
+  zoomFooterEl.hidden = true;
 }
 
 function hideEmptyState(): void {
   emptyStateTeardown?.();
   emptyStateTeardown = null;
+  zoomFooterEl.hidden = false;
 }
 
 /**
@@ -634,7 +654,7 @@ function closeDocument(): void {
   scrubberTeardown = null;
   zoomContextEl.textContent = '';
   statusEl.textContent = 'No document';
-  docFilenameEl.textContent = '';
+  // docFilenameEl reset to APP_NAME by showEmptyState() below.
   statusBadge?.setStatus('native'); // clears any corrupt/untagged note
 
   viewportEl.replaceChildren();
@@ -868,6 +888,7 @@ window.addEventListener('DOMContentLoaded', () => {
   viewportEl = document.querySelector<HTMLElement>('#viewport')!;
   scrubberEl = document.querySelector<HTMLElement>('#scrubber')!;
   zoomContextEl = document.querySelector<HTMLElement>('#zoom-context')!;
+  zoomFooterEl = document.querySelector<HTMLElement>('#zoom-footer')!;
   statusEl = document.querySelector<HTMLElement>('#status')!;
   docFilenameEl = document.querySelector<HTMLElement>('#doc-filename')!;
   contentMapEl = document.querySelector<HTMLElement>('#content-map')!;
