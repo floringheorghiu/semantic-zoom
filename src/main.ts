@@ -191,24 +191,24 @@ function currentLayer(): HTMLElement | null {
 
 /**
  * Scroll the current layer so `id`'s element (a paragraph, section, or
- * milestone — whichever exists at `currentLevel`) sits just below the top
- * edge — never centered. The write goes through the single rAF
- * `scrollCommands$` queue (spec §3.2) — `.scrollTop` is NEVER assigned here.
- * Used by both the content-map's click-to-navigate and ⌘↓/⌘↑'s
- * step-to-next-item.
+ * milestone — whichever it is) sits just below the top edge — never
+ * centered. The write goes through the single rAF `scrollCommands$` queue
+ * (spec §3.2) — `.scrollTop` is NEVER assigned here. Used by both the
+ * content-map's click-to-navigate and ⌘↓/⌘↑'s step-to-next-item.
  *
- * Delegates the actual position read to `topAlignedScrollTop` (viewport.ts),
- * NOT a raw `el.offsetTop` — a paragraph inside a currently off-screen
- * section reads `offsetTop` 0 under `content-visibility: auto` (§4.2) unless
- * that guard forces it visible first. Bug history: an earlier version of
- * this function read `el.offsetTop` directly, which is exactly why ⌘↓/⌘↑
- * moved the highlight but content never visibly scrolled — the computed
- * target was always (incorrectly) 0.
+ * Delegates to `topAlignedScrollTop` (viewport.ts), NOT a raw `el.offsetTop`
+ * — a paragraph inside a currently off-screen section reads `offsetTop` 0
+ * under `content-visibility: auto` (§4.2) unless that's guarded against.
+ * Deliberately does NOT pass `currentLevel`: content-map bars are SECTION
+ * ids at BOTH k=0 and k=−1 (buildMapModel), not "whatever the zoom-anchor
+ * target type is at this level" — passing the level here once caused this
+ * function to silently search for the wrong element and no-op at k=0.
+ * `topAlignedScrollTop` instead matches whichever id "kind" `id` actually is.
  */
 function scrollItemToTop(id: string): void {
   const layer = currentLayer();
   if (!layer) return;
-  const top = topAlignedScrollTop(layer, currentLevel, id);
+  const top = topAlignedScrollTop(layer, id);
   if (top === null) return;
   scrollCommands$.next({ el: layer, top });
 }

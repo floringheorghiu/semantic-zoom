@@ -331,13 +331,22 @@ test('measureTargetTop returns null when the target is absent from the layer', (
 });
 
 // --- topAlignedScrollTop: ⌘↓/⌘↑ and content-map click-to-navigate -----------
-// Regression: an earlier version of main.ts's scrollItemToTop read
-// `el.offsetTop` directly with no content-visibility guard — the active-group
-// highlight moved (a plain attribute write, no layout dependency) but the
-// viewport never actually scrolled whenever the target paragraph's section
-// was currently skipped, since the computed target was always (wrongly) 0.
+// Two distinct regressions guarded here, in order:
+//  1. An earlier version of main.ts's scrollItemToTop read `el.offsetTop`
+//     directly with no content-visibility guard — the active-group highlight
+//     moved (a plain attribute write, no layout dependency) but the viewport
+//     never actually scrolled once the target paragraph's section was
+//     off-screen, since the computed target was always (wrongly) 0.
+//  2. Fixing #1 by threading a `level` parameter through to a level-keyed
+//     selector broke content-map clicks AT k=0 specifically: content-map
+//     bars are SECTION ids at BOTH k=0 and k=−1 (buildMapModel), but a
+//     level-keyed lookup assumed "k=0 id" always means "paragraph id" (true
+//     for the zoom-transition anchor, false for the content-map). A section
+//     id at k=0 silently matched nothing and no-op'd. `topAlignedScrollTop`
+//     takes NO level parameter at all now — id "kind" (P-/S-/M- prefix) is
+//     unambiguous on its own, so there is nothing left to disagree with.
 
-test('topAlignedScrollTop force-renders the target\'s group for the read, then restores it (k=0)', () => {
+test('topAlignedScrollTop force-renders the target\'s group for the read, then restores it (paragraph id)', () => {
   const { layer, group, node } = makeLayer();
   group.style.contentVisibility = 'auto';
   stubMetrics(layer, 400, 2000);
@@ -352,14 +361,14 @@ test('topAlignedScrollTop force-renders the target\'s group for the read, then r
     },
   });
 
-  const top = topAlignedScrollTop(layer, 0, 'P1a');
+  const top = topAlignedScrollTop(layer, 'P1a');
 
   expect(seenDuringRead).toBe('visible');             // forced to render
   expect(group.style.contentVisibility).toBe('auto');  // ...and restored
   expect(top).toBe(476);                                // 500 - 24
 });
 
-test('topAlignedScrollTop leaves the group untouched when the group IS the target (k=-1/-2)', () => {
+test('topAlignedScrollTop leaves the group untouched when the group IS the target (section id)', () => {
   const { layer, group } = makeLayer();
   group.style.contentVisibility = 'auto';
   stubMetrics(layer, 400, 2000);
@@ -374,7 +383,10 @@ test('topAlignedScrollTop leaves the group untouched when the group IS the targe
     },
   });
 
-  expect(topAlignedScrollTop(layer, -1, 'S1')).toBe(476);
+  // The section id resolves correctly with NO level argument — this is
+  // regression #2's exact repro: a section id used to only work when the
+  // caller also happened to pass level=-1.
+  expect(topAlignedScrollTop(layer, 'S1')).toBe(476);
   expect(touched).toBe(false); // a .pgroup always has its own box
   expect(group.style.contentVisibility).toBe('auto');
 });
@@ -384,15 +396,15 @@ test('topAlignedScrollTop clamps to [0, scrollHeight - clientHeight]', () => {
   stubMetrics(layer, 400, 2000);
 
   stubBox(node, 10, 20); // near the very top: 10 - 24 would go negative
-  expect(topAlignedScrollTop(layer, 0, 'P1a')).toBe(0);
+  expect(topAlignedScrollTop(layer, 'P1a')).toBe(0);
 
   stubBox(node, 1990, 20); // near the very end: past the max scroll
-  expect(topAlignedScrollTop(layer, 0, 'P1a')).toBe(1600); // 2000 - 400
+  expect(topAlignedScrollTop(layer, 'P1a')).toBe(1600); // 2000 - 400
 });
 
 test('topAlignedScrollTop returns null when the target is absent from the layer', () => {
   const { layer } = makeLayer();
-  expect(topAlignedScrollTop(layer, 0, 'P-nope')).toBe(null);
+  expect(topAlignedScrollTop(layer, 'P-nope')).toBe(null);
 });
 
 // --- mountedBoxes: the SOURCE-side anchor read, same content-visibility bug ---
