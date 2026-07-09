@@ -232,6 +232,40 @@ function scrollItemToTop(id: string, framesLeft = 5): void {
 }
 
 /**
+ * Move the active-item marker + scroll + (at k=0) caret to `next` — the
+ * shared tail end of both ⌘↓/⌘↑ single-stepping and ⌘⇧↓/⌘⇧↑ jump-to-edge.
+ * A no-op if there's nothing to move to, or `next` is already current.
+ *
+ * `prevActiveGroupId` is kept current by every scroll tick
+ * (`updateMapFromScroll`'s `sectionAtTop`) at all levels, so callers pick up
+ * from wherever the user scrolled to, and the explicit `markActiveGroup`
+ * here keeps a second rapid call stepping from the right place.
+ */
+function moveActiveGroup(next: string | null): void {
+  if (!currentTable || !next) return;
+  const current = prevActiveGroupId;
+  if (next === current) return;
+  const layer = currentLayer();
+  if (layer) markActiveGroup(layer, next, current);
+  prevActiveGroupId = next;
+  scrollItemToTop(next);
+
+  // Focus mask (§4.3) is caret-driven and independent of the active-group
+  // border above — without this, stepping to a new section left the mask
+  // spotlit on wherever the caret was last CLICKED, not where navigation
+  // just took you. Move the caret to the target section's first paragraph,
+  // same as a click there would (mountCaret's callback), so the mask
+  // follows. Only meaningful at k=0 — the caret/mask don't exist at −1/−2.
+  if (currentLevel === 0) {
+    const firstPid = currentTable.sections[next]?.children[0];
+    if (firstPid) {
+      caretIsCurrent = true;
+      actions$.next(caretPlaced(firstPid, 0));
+    }
+  }
+}
+
+/**
  * ⌘↓ / ⌘↑ (View menu): step to the next/previous item at the CURRENT zoom
  * level — SECTIONS at k=0 and k=−1, milestones at k=−2 — and scroll it to
  * the top via `scrollItemToTop` (never centered, per the request this
@@ -249,37 +283,27 @@ function scrollItemToTop(id: string, framesLeft = 5): void {
  * k=0) — so ⌘↓/⌘↑ now walks the same ids the content map shows,
  * user-approved trade. Restore paragraph stepping only with real-WebKit
  * verification in hand.
- *
- * `prevActiveGroupId` is kept current by every scroll tick
- * (`updateMapFromScroll`'s `sectionAtTop`) at all levels, so stepping picks
- * up from wherever the user scrolled to, and the explicit `markActiveGroup`
- * here keeps a second rapid press stepping from the right place.
  */
 function navigateItem(dir: 1 | -1): void {
   if (!currentTable) return;
-
   const ids = currentLevel === -2 ? currentTable.order.meta : currentTable.order.sections;
-  const current = prevActiveGroupId;
-  const next = nextParagraph(ids, current, dir);
-  if (!next || next === current) return;
-  const layer = currentLayer();
-  if (layer) markActiveGroup(layer, next, current);
-  prevActiveGroupId = next;
-  scrollItemToTop(next);
+  moveActiveGroup(nextParagraph(ids, prevActiveGroupId, dir));
+}
 
-  // Focus mask (§4.3) is caret-driven and independent of the active-group
-  // border above — without this, stepping to a new section left the mask
-  // spotlit on wherever the caret was last CLICKED, not where ⌘↓/⌘↑ just
-  // took you. Move the caret to the target section's first paragraph, same
-  // as a click there would (mountCaret's callback), so the mask follows.
-  // Only meaningful at k=0 — the caret/mask don't exist at −1/−2.
-  if (currentLevel === 0) {
-    const firstPid = currentTable.sections[next]?.children[0];
-    if (firstPid) {
-      caretIsCurrent = true;
-      actions$.next(caretPlaced(firstPid, 0));
-    }
-  }
+/**
+ * ⌘⇧↓ / ⌘⇧↑ (View menu): jump straight to the LAST/FIRST item at the
+ * current level — same id space as `navigateItem` (sections at k=0/−1,
+ * milestones at k=−2), just the ends of `ids` instead of one step from
+ * wherever you are. `topAlignedScrollTop`'s own clamp to
+ * `[0, scrollHeight - clientHeight]` (viewport.ts) means landing on the
+ * LAST id already lands at the true bottom of the document, not just that
+ * section's top — no separate "scroll to max" path needed.
+ */
+function jumpToEdge(dir: 1 | -1): void {
+  if (!currentTable) return;
+  const ids = currentLevel === -2 ? currentTable.order.meta : currentTable.order.sections;
+  if (ids.length === 0) return;
+  moveActiveGroup(dir === 1 ? ids[ids.length - 1] : ids[0]);
 }
 
 /**
@@ -765,6 +789,8 @@ async function installMenu(): Promise<void> {
       // switches above, which change WHICH level you're viewing.
       await MenuItem.new({ id: 'nav-next', text: 'Next Item', accelerator: 'CmdOrCtrl+Down', action: () => navigateItem(1) }),
       await MenuItem.new({ id: 'nav-prev', text: 'Previous Item', accelerator: 'CmdOrCtrl+Up', action: () => navigateItem(-1) }),
+      await MenuItem.new({ id: 'nav-end', text: 'Jump to End', accelerator: 'CmdOrCtrl+Shift+Down', action: () => jumpToEdge(1) }),
+      await MenuItem.new({ id: 'nav-top', text: 'Jump to Top', accelerator: 'CmdOrCtrl+Shift+Up', action: () => jumpToEdge(-1) }),
       await sep(),
       // Content scale (browser-style). ⌘+ is the macOS-standard zoom-in
       // accelerator and fires on the unshifted ⌘= key too.
@@ -831,6 +857,45 @@ function installKeyboardShortcuts(): void {
       e.preventDefault();
       navigateItem(e.key === 'ArrowDown' ? 1 : -1);
     }
+  });
+
+  // ⌘⇧↓/⌘⇧↑ jump-to-edge, handled in the DOM for the same reason as ⌘↓/⌘↑
+  // above: Cmd+Shift+Arrow is macOS's "extend selection to start/end of
+  // document" key equivalent, the shifted sibling of the combo that turned
+  // out to be eaten by WebKit before the menu accelerator ever saw it
+  // whenever a text selection exists (k=0) — same risk, same fix.
+  window.addEventListener('keydown', (e) => {
+    if (!e.metaKey || e.ctrlKey || e.altKey || !e.shiftKey) return;
+    if (inEditable(e.target)) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      jumpToEdge(e.key === 'ArrowDown' ? 1 : -1);
+    }
+  });
+
+  // Plain ArrowUp/ArrowDown: wheel-like line scroll of the current layer,
+  // previously unsupported. Deliberately independent of the read-only
+  // caret's OWN ArrowUp/Down handling (caret.ts, mounted only at k=0): that
+  // silently repositions the `.pnode[data-caret]` marker for anchor-engine
+  // bookkeeping (no CSS renders it, so it has no visible effect on its own)
+  // and never scrolled the view. This handler never touches the caret, so
+  // the two run side by side on the same keypress without fighting over it.
+  // Sets `caretIsCurrent = false` for the same reason `onViewportWheel`
+  // does: a keyboard scroll is just as much "the user moved away from the
+  // caret" as a trackpad gesture is, for zoom-out anchoring purposes (§2.5).
+  const LINE_SCROLL_PX = 80;
+  window.addEventListener('keydown', (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+    if (inEditable(e.target)) return;
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    const layer = currentLayer();
+    if (!layer) return;
+    e.preventDefault();
+    caretIsCurrent = false;
+    const max = Math.max(0, layer.scrollHeight - layer.clientHeight);
+    const delta = e.key === 'ArrowDown' ? LINE_SCROLL_PX : -LINE_SCROLL_PX;
+    const top = Math.min(Math.max(layer.scrollTop + delta, 0), max);
+    scrollCommands$.next({ el: layer, top });
   });
 
   // Content-scale zoom-IN via the physical =/+ key. The View-menu accelerator
