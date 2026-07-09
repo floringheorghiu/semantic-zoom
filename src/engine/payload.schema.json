@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "semantic-zoom/lookup-table/v1",
+  "type": "object",
+  "required": ["version", "docHash", "meta", "sections", "paragraphs", "order"],
+  "properties": {
+    "version": { "const": 1 },
+    "docHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "meta": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["id", "level", "children", "title", "body"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^M\\d+$" },
+          "level": { "const": -2 },
+          "children": { "type": "array", "items": { "pattern": "^S-[a-f0-9]{8}-\\d+$" }, "minItems": 1 },
+          "title": { "type": "string" },
+          "body": { "type": "string" }
+        }
+      }
+    },
+    "sections": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["id", "level", "parent", "children", "title", "body"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^S-[a-f0-9]{8}-\\d+$" },
+          "level": { "const": -1 },
+          "parent": { "type": "string", "pattern": "^M\\d+$" },
+          "children": { "type": "array", "items": { "pattern": "^P-[a-f0-9]{8}-\\d+$" }, "minItems": 1 },
+          "title": { "type": "string" },
+          "body": { "type": "string" }
+        }
+      }
+    },
+    "paragraphs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["id", "level", "parent", "kind", "span", "html"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^P-[a-f0-9]{8}-\\d+$" },
+          "level": { "const": 0 },
+          "parent": { "type": "string", "pattern": "^S-[a-f0-9]{8}-\\d+$" },
+          "kind": { "enum": ["prose", "code", "list", "table", "heading", "blockquote"] },
+          "span": {
+            "type": "object",
+            "required": ["start", "end"],
+            "properties": {
+              "start": { "type": "integer", "minimum": 0 },
+              "end": { "type": "integer", "minimum": 0 }
+            }
+          },
+          "html": { "type": "string" },
+          "lang": { "type": "string" }
+        }
+      }
+    },
+    "order": {
+      "type": "object",
+      "required": ["meta", "sections", "paragraphs"],
+      "properties": {
+        "meta": { "type": "array", "items": { "type": "string" } },
+        "sections": { "type": "array", "items": { "type": "string" } },
+        "paragraphs": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

@@ -1,0 +1,86 @@
+/* Content map sidebar (plan §4.9). A 32px minimap pinned near the top-left of
+   the content area. It lives OUTSIDE #viewport — `renderLevel` calls
+   `replaceChildren` on the viewport, so a child map would be wiped on every
+   render — hence the .viewport-wrap positioning context. */
+
+.viewport-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+/* #viewport keeps its own `position: relative` (base.css) so `.level-layer`
+   (position:absolute; inset:0) still resolves against it. */
+#viewport {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#content-map {
+  position: absolute;
+  left: 12px;
+  top: 16px;
+  z-index: 3;
+  width: 32px;
+  /* Content-sized, but never taller than the content area. Past that the item
+     list shrinks its gap, then scrolls internally (see content-map.ts). */
+  max-height: calc(100% - 32px);
+  display: flex;
+  padding: 5px;
+  background: var(--sz-bg);
+  border: 1px solid var(--sz-border);
+  border-radius: 4px;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.1),
+    0 1px 2px -1px rgba(0, 0, 0, 0.1);
+  overflow: clip;
+}
+
+/* `hidden` must beat the `display: flex` above (no native doc → no map). */
+#content-map[hidden] {
+  display: none;
+}
+
+.map-items {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px; /* content-map.ts may shrink this toward a 1px floor */
+  scrollbar-width: none;
+}
+
+.map-items::-webkit-scrollbar {
+  display: none;
+}
+
+.map-bar {
+  flex: 0 0 auto;
+  width: 100%;
+  height: 4px;
+  border-radius: 7px;
+  background: var(--sz-map-bar);
+  cursor: pointer;
+}
+
+/* Visible range highlight (LOCKED): every group intersecting the viewport.
+   An instant color swap — nothing here transitions (D1: opacity only). */
+.map-bar[data-active] {
+  background: var(--sz-map-bar-active);
+}
+
+.map-bar:focus-visible {
+  outline: 1px solid var(--sz-accent);
+  outline-offset: 1px;
+}
+
+.map-sep {
+  flex: 0 0 auto;
+  width: 2px;
+  height: 2px;
+  border-radius: 7px;
+  background: var(--sz-map-bar);
+}

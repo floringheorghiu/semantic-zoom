@@ -1,0 +1,394 @@
+/* Reading column, Story cards, and raw-table legibility.
+   Light-first (matches the Figma design); the dark palette is opt-in under
+   :root[data-theme="dark"]. All body text and badge LABELS clear ≥4.5:1 on white.
+   The Blocker label uses `--sz-warn-text` (#b35f00, 4.61:1); the exact Figma amber
+   `--sz-warn` (#d36f00, 3.49:1) is kept for the TICK — a graphic, which needs only
+   3:1 per WCAG 1.4.11. */
+
+/* ---------- Reading column (Ask 2): a centered, capped measure ---------- */
+
+/* Content scale (⌘= / ⌘- / ⌘0): browser-style zoom of the reading content only
+   — chrome (toolbar, traffic-light inset) is unaffected. `zoom` reflows, so the
+   column grows and the layer scrolls; offset-based anchor math stays consistent
+   since it's all in the same scaled space. The var lives on #viewport so it
+   cascades to both the current and the entering transition layers. */
+.reading-column,
+.level-layer > pre {
+  zoom: var(--content-scale, 1);
+}
+
+.reading-column {
+  width: 100%;
+  max-width: 46rem;          /* ~736px — a comfortable prose measure */
+  margin-inline: auto;
+  /* The scroll container (.level-layer) fills the viewport edge-to-edge, so
+     the reading gutter lives here. */
+  padding: 1.75rem 1.25rem 3rem;
+}
+
+/* Raw level carries tables/code; give it a little more room. */
+.level-layer[data-level='0'] > .reading-column {
+  max-width: 54rem;          /* ~864px */
+}
+
+/* ---------- Per-level document header (§4.2) ---------- */
+
+/* Title + subtitle at the top of the reading content; scrolls with it. */
+.doc-header {
+  margin: 0 0 1.5rem;
+}
+
+.doc-title {
+  font-size: 1.9rem;
+  line-height: 1.15;
+  font-weight: 700;
+  color: var(--sz-ink);
+  text-wrap: balance;
+  margin: 0 0 0.35rem;
+}
+
+.doc-subtitle {
+  font-size: 0.9rem;
+  color: var(--sz-muted);
+  margin: 0;
+}
+
+/* ---------- Story MetaCard (§4.4, Figma node 36:718) ----------
+
+   LAYOUT INVARIANT: nothing in this block may set `position` on `.metacard`,
+   `.pgroup`, or `.reading-column`. `.level-layer` (position:absolute, see
+   focus-mask.css) must remain the offsetParent of every `.pnode` — the anchor
+   engine, the zoom transition and the content map all read `offsetTop` against
+   it. `overflow: clip` is safe; it establishes no containing block. */
+
+.metacard {
+  background: var(--sz-bg);
+  border: 1px solid var(--sz-border);
+  border-radius: var(--sz-radius-card);
+  overflow: clip;
+}
+
+.metacard-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 12px 16px;
+  background: var(--sz-card-head);
+  border-bottom: 1px solid var(--sz-border);
+}
+
+.metacard-label {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--sz-accent);
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+}
+
+.metacard-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--sz-accent);
+  letter-spacing: -0.15px;
+  text-wrap: balance;
+}
+
+.metacard-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px;
+}
+
+.metacard-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: var(--sz-card-foot);
+  border-top: 1px solid var(--sz-border);
+}
+
+.metacard-count {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--sz-muted);
+}
+
+/* The flexible rule between the count and the id range. */
+.metacard-rule {
+  flex: 1;
+  height: 1px;
+  background: var(--sz-hairline);
+}
+
+.metacard-ids {
+  font-family: var(--sz-mono);
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--sz-muted-50);
+  white-space: nowrap;
+}
+
+/* The card already carries its own padding — drop the inner summary card's
+   frame so the body reads as one surface. The same applies at k=−1, where the
+   `.pgroup` itself is the frame (§4.6): a labeled section body must not draw a
+   second, nested card inside the accent border. Nested cards are always wrong. */
+.metacard-body > .summary-card,
+.level-layer[data-level='-1'] .pgroup > .summary-card {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+/* ---------- Section milestone divider (k=−1, §4.4) ---------- */
+
+/* Not a `.pgroup`: chrome announcing the first section of each milestone. */
+.milestone-divider {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding-bottom: 8px;
+  margin: 2rem 0 1.25rem;
+  border-bottom: 1px solid var(--sz-border);
+}
+
+.milestone-divider:first-child,
+.doc-header + .milestone-divider {
+  margin-top: 0;
+}
+
+.milestone-label {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--sz-accent);
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+}
+
+.milestone-title {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--sz-accent);
+  letter-spacing: -0.15px;
+}
+
+/* A divider directly after a group needs no extra group margin on top of its
+   own; the group→divider gap is the divider's margin-top. */
+.pgroup + .milestone-divider {
+  margin-top: 2rem;
+}
+
+/* ---------- S-id label (k=0 / k=−1, §4.4) ---------- */
+
+/* Normal flow, right-aligned text — NEVER `position: absolute`, which would
+   force a positioned `.pgroup` and rebase every `.pnode.offsetTop`. */
+.sid-label {
+  font-family: var(--sz-mono);
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--sz-muted-50);
+  text-align: right;
+  margin-bottom: 0.35rem;
+}
+
+/* ---------- Story / Section summary cards (Ask 3) ---------- */
+
+.summary-title {
+  font-size: 1.15rem;
+  line-height: 1.3;
+  text-wrap: balance;
+  margin: 0 0 0.6rem;
+}
+
+.pgroup + .pgroup {
+  margin-top: 2rem;
+}
+
+/* ---------- Active group: the accent border (§4.6) ----------
+
+   Which group is "active" is decided in main.ts by spec §2.5's anchor rule 2 —
+   the group nearest the viewport centre — and stamped as `data-active` from the
+   content map's existing rAF scroll handler. focus-mask.ts is untouched: it owns
+   `[data-dimmed]` (the opacity fade of the OTHERS) and nothing else.
+
+   NO LAYOUT SHIFT: the k=0 / k=−1 groups carry a 1px TRANSPARENT border and
+   their padding unconditionally, so activating one changes `border-color` and
+   nothing else — the border box is byte-identical either way. Every `.pnode`
+   offset the anchor engine and the content map cached stays valid. `.metacard`
+   already draws a 1px border, so it only needs the color.
+
+   D1: this is an INSTANT attribute swap. Never transition `border-color` — the
+   only animated property anywhere in the reading column is `opacity`. */
+
+.level-layer[data-level='0'] .pgroup,
+.level-layer[data-level='-1'] .pgroup {
+  border: 1px solid transparent;
+  border-radius: var(--sz-radius-card);
+  padding: 0.85rem 1rem;
+}
+
+.pgroup[data-active],
+.metacard[data-active] {
+  border-color: var(--sz-accent-border);
+}
+
+/* Story cards sit a little closer than bare section blocks. */
+.level-layer[data-level='-2'] .metacard + .metacard {
+  margin-top: 1.25rem;
+}
+
+/* One flat card per block — no nesting. Groups the labeled rows so the
+   labels read as structure, not a wall of bold text. */
+.summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 1.15rem 1.25rem;
+  border: 1px solid var(--sz-border);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.025);
+}
+
+/* `[tick] [ LABEL / body ]` — Figma MetaCard 36:718 / 36:748 (§4.5). */
+.summary-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.summary-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.summary-text {
+  margin: 0;
+  padding-top: 4px;
+  font-size: 12px;
+  line-height: 19.5px;
+  color: var(--sz-muted);
+  text-wrap: pretty;
+}
+
+/* Plain-prose fallback (bodies without labeled segments). */
+.summary-body {
+  text-wrap: pretty;
+}
+.summary-body p {
+  margin: 0 0 0.75rem;
+}
+
+/* ---------- Semantic badges: colored uppercase label + tick ---------- */
+
+/* The 4×14px rounded bar left of the label. Colors mirror `.badge`; the 1px
+   nudge lines its top edge up with the label's cap height. */
+.badge-tick {
+  flex: 0 0 auto;
+  width: 4px;
+  height: 14px;
+  margin-top: 1px;
+  border-radius: 6px;
+  background: var(--sz-muted);        /* default (neutral) */
+}
+
+.badge-tick[data-variant='covers']  { background: var(--sz-accent); }
+.badge-tick[data-variant='done']    { background: var(--sz-ok); }
+.badge-tick[data-variant='blocker'] { background: var(--sz-warn); }
+.badge-tick[data-variant='prereq']  { background: var(--sz-accent); }
+.badge-tick[data-variant='next']    { background: var(--sz-info); }
+
+/* NOT a filled pill: bare uppercase type in the semantic color. */
+.badge {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 15px;
+  letter-spacing: 0.617px;
+  text-transform: uppercase;
+  color: var(--sz-muted);             /* default (neutral) */
+}
+
+.badge[data-variant='covers']  { color: var(--sz-accent); }
+.badge[data-variant='done']    { color: var(--sz-ok); }
+.badge[data-variant='blocker'] { color: var(--sz-warn-text); }
+.badge[data-variant='prereq']  { color: var(--sz-accent); }
+.badge[data-variant='next']    { color: var(--sz-info); }
+
+/* ---------- Raw-mode code block (§4.7) ---------- */
+
+/* Light surface + hairline frame, matching the Figma `Level0View` (36:109).
+   Both values are tokens, so the dark mapping follows for free. */
+.pnode pre {
+  overflow-x: auto;
+  padding: 0.75rem;
+  background: var(--sz-track);
+  border: 1px solid var(--sz-border);
+  border-radius: 6px;
+}
+
+/* ---------- Raw-mode table legibility (Ask 4) ---------- */
+
+.table-scroll {
+  overflow-x: auto;
+  margin: 0 0 0.85rem;
+}
+
+.pnode table {
+  width: 100%;
+  border-collapse: collapse;
+  /* auto layout apportions width by content, so dense columns like "Why"
+     get more room than an index/ref column (Ask 4, proportional widths). */
+  table-layout: auto;
+  font-size: 0.92em;
+}
+
+.pnode th,
+.pnode td {
+  padding: 0.75rem 1rem;                        /* generous cell padding */
+  border: 1px solid var(--sz-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.pnode thead th {
+  background: var(--sz-table-head);
+  font-weight: 600;
+}
+
+/* Quiet zebra striping. */
+.pnode tbody tr:nth-child(even) {
+  background: var(--sz-hairline);
+}
+
+/* Narrow leading index/reference columns don't need to wrap. */
+.pnode td:first-child,
+.pnode th:first-child {
+  white-space: nowrap;
+}
+
+/* Inline `code`: a subtle token tint (the code BLOCK is skinned above). */
+.pnode :not(pre) > code,
+.summary-text code {
+  padding: 0.1em 0.35em;
+  border-radius: 5px;
+  background: var(--sz-code-tint);
+  font-size: 0.9em;
+}
+
+/* ---------- Dark-mode overrides (opt-in via data-theme, D-A) ---------- */
+
+:root[data-theme="dark"] .summary-card {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: rgba(128, 128, 128, 0.2);
+}
+/* `.badge`/`.badge-tick` need no dark overrides — the semantic tokens
+   (`--sz-ok`/`--sz-warn`/`--sz-info`/`--sz-accent`/`--sz-muted`) already carry
+   their dark values. Same now for the table + code block: `--sz-table-head`,
+   `--sz-hairline`, `--sz-track`, `--sz-border` and `--sz-code-tint` all remap
+   under `[data-theme="dark"]`, so their rules need no override here. */

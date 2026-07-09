@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Semantic Zoom</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+
+  <body>
+    <div id="app">
+      <div class="toolbar" data-tauri-drag-region>
+        <span class="status" id="status">No document</span>
+      </div>
+      <div class="viewport-wrap">
+        <main id="viewport" data-zoom="0"></main>
+        <aside id="content-map" aria-label="Content map" hidden></aside>
+      </div>
+      <div id="zoom-footer">
+        <div id="scrubber"></div>
+        <span id="zoom-context"></span>
+      </div>
+    </div>
+  </body>
+</html>

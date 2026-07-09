@@ -1,0 +1,371 @@
+import { test, expect, beforeEach, afterEach } from 'vitest';
+import type { Subscription } from 'rxjs';
+
+import { buildIndex, type LookupTable, type ZoomLevel } from '../engine/schema';
+import {
+  mountZoomTransitions,
+  measureTargetTop,
+  settleScroll,
+  scrollCommands$,
+  type ZoomTransitionState,
+} from './viewport';
+import { actions$ } from '../state/store';
+import { zoomSet } from '../state/actions';
+
+// Fixture: 2 meta / 2 sections / 4 paragraphs (mirrors anchor.test.ts). Lets a
+// caret in P1a map cleanly to its parent section S1 across a 0 → −1 transition.
+const table: LookupTable = {
+  version: 1,
+  docHash: 'a'.repeat(64),
+  meta: {
+    M1: { id: 'M1', level: -2, children: ['S1'], title: 'm1', body: 'b' },
+    M2: { id: 'M2', level: -2, children: ['S2'], title: 'm2', body: 'b' },
+  },
+  sections: {
+    S1: { id: 'S1', level: -1, parent: 'M1', children: ['P1a', 'P1b'], title: 's1', body: 'b' },
+    S2: { id: 'S2', level: -1, parent: 'M2', children: ['P2a', 'P2b'], title: 's2', body: 'b' },
+  },
+  paragraphs: {
+    P1a: { id: 'P1a', level: 0, parent: 'S1', kind: 'prose', span: { start: 0, end: 1 }, html: 'a' },
+    P1b: { id: 'P1b', level: 0, parent: 'S1', kind: 'prose', span: { start: 1, end: 2 }, html: 'b' },
+    P2a: { id: 'P2a', level: 0, parent: 'S2', kind: 'prose', span: { start: 2, end: 3 }, html: 'c' },
+    P2b: { id: 'P2b', level: 0, parent: 'S2', kind: 'prose', span: { start: 3, end: 4 }, html: 'd' },
+  },
+  order: { meta: ['M1', 'M2'], sections: ['S1', 'S2'], paragraphs: ['P1a', 'P1b', 'P2a', 'P2b'] },
+};
+const index = buildIndex(table);
+
+// --- Deterministic rAF: a manual queue we drain one "frame" at a time. -------
+let rafQueue: FrameRequestCallback[] = [];
+let realRaf: typeof requestAnimationFrame;
+let realCancel: typeof cancelAnimationFrame;
+
+function flushFrame(): void {
+  const q = rafQueue;
+  rafQueue = [];
+  for (const cb of q) cb(0);
+}
+
+// --- Session state the effect reads via getState (as main.ts supplies it). ---
+let viewport: HTMLElement;
+let level: ZoomLevel;
+let caret: { paragraphId: string | null; offset: number };
+const lastCaretIn = new Map<string, string>();
+const lastAnchorIn = new Map<string, string>();
+
+function getState(): ZoomTransitionState {
+  return { table, index, level, caret, lastCaretIn, lastAnchorIn };
+}
+
+/** Mimic main.ts requestLevel: dispatch ZOOM_SET, then advance the source. */
+function requestLevel(next: ZoomLevel): void {
+  actions$.next(zoomSet(next));
+  level = next;
+}
+
+let teardown: (() => void) | null = null;
+let scrollSub: Subscription | null = null;
+let scrolls: { el: HTMLElement; top: number }[] = [];
+
+beforeEach(() => {
+  realRaf = globalThis.requestAnimationFrame;
+  realCancel = globalThis.cancelAnimationFrame;
+  globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) =>
+    rafQueue.push(cb)) as typeof requestAnimationFrame;
+  globalThis.cancelAnimationFrame = ((id: number) => {
+    rafQueue[id - 1] = () => {};
+  }) as typeof cancelAnimationFrame;
+
+  rafQueue = [];
+  scrolls = [];
+  scrollSub = scrollCommands$.subscribe((c) => scrolls.push(c));
+
+  // Reset the shared store zoom to 0 so the mount emission is a no-op.
+  actions$.next(zoomSet(0));
+  level = 0;
+  caret = { paragraphId: null, offset: 0 };
+  lastCaretIn.clear();
+  lastAnchorIn.clear();
+
+  viewport = document.createElement('div');
+  viewport.id = 'viewport';
+  document.body.appendChild(viewport);
+
+  // Initial mount is DIRECT (as main.ts does on open) — a level-0 layer.
+  const initial = document.createElement('div');
+  initial.className = 'level-layer';
+  initial.dataset.level = '0';
+  for (const pid of ['P1a', 'P1b', 'P2a', 'P2b']) {
+    const p = document.createElement('div');
+    p.className = 'pnode';
+    p.dataset.pid = pid;
+    initial.appendChild(p);
+  }
+  viewport.appendChild(initial);
+
+  teardown = mountZoomTransitions(viewport, getState);
+});
+
+afterEach(() => {
+  teardown?.();
+  teardown = null;
+  scrollSub?.unsubscribe();
+  scrollSub = null;
+  viewport.remove();
+  globalThis.requestAnimationFrame = realRaf;
+  globalThis.cancelAnimationFrame = realCancel;
+});
+
+// jsdom has no layout: offsetTop/clientHeight/scrollTop are all hardcoded 0.
+// Shadow them per-instance so the centering math has something real to chew on.
+function stubBox(el: HTMLElement, offsetTop: number, offsetHeight: number): void {
+  Object.defineProperty(el, 'offsetTop', { value: offsetTop, configurable: true });
+  Object.defineProperty(el, 'offsetHeight', { value: offsetHeight, configurable: true });
+}
+function stubMetrics(el: HTMLElement, clientHeight: number, scrollHeight: number): void {
+  Object.defineProperty(el, 'clientHeight', { value: clientHeight, configurable: true });
+  Object.defineProperty(el, 'scrollHeight', { value: scrollHeight, configurable: true });
+}
+
+/** A level-0 layer: one `.pgroup` wrapping one `.pnode` (the skipped-box case). */
+function makeLayer(): { layer: HTMLElement; group: HTMLElement; node: HTMLElement } {
+  const layer = document.createElement('div');
+  layer.className = 'level-layer';
+  const group = document.createElement('section');
+  group.className = 'pgroup';
+  group.dataset.sid = 'S1';
+  const node = document.createElement('div');
+  node.className = 'pnode';
+  node.dataset.pid = 'P1a';
+  group.appendChild(node);
+  layer.appendChild(group);
+  return { layer, group, node };
+}
+
+function fireOpacityEnd(layer: HTMLElement): void {
+  const ev = new Event('transitionend');
+  Object.defineProperty(ev, 'propertyName', { value: 'opacity' });
+  layer.dispatchEvent(ev);
+}
+
+test('frame n: entering layer is appended with NO scroll write', () => {
+  caret = { paragraphId: 'P1a', offset: 0 };
+  requestLevel(-1); // synchronously runs frame n
+
+  const entering = viewport.querySelectorAll('.level-layer[data-entering]');
+  expect(entering.length).toBe(1);
+  const layer = entering[0] as HTMLElement;
+  expect(layer.dataset.level).toBe('-1');
+  expect(layer.style.visibility).toBe('hidden');
+  expect(viewport.getAttribute('data-transitioning')).toBe('');
+  // Both layers coexist; frame n is measurement-free.
+  expect(viewport.querySelectorAll('.level-layer').length).toBe(2);
+  expect(scrolls.length).toBe(0); // no scrollTop write in frame n (D8)
+});
+
+test('frame n+1: scroll write occurs and the fade starts (data-entering removed)', () => {
+  caret = { paragraphId: 'P1a', offset: 0 };
+  requestLevel(-1);
+  const layer = viewport.querySelector('.level-layer[data-entering]') as HTMLElement;
+  // Give the entering layer real geometry: target S1 centered → 500+50-200 = 350.
+  stubMetrics(layer, 400, 2000);
+  stubBox(layer.querySelector('.pgroup[data-sid="S1"]') as HTMLElement, 500, 100);
+
+  expect(scrolls.length).toBe(0);
+  flushFrame(); // frame n+1
+
+  expect(scrolls.length).toBe(1);
+  expect(scrolls[0].el).toBe(layer); // scroll routed onto the NEW layer
+  expect(scrolls[0].top).toBe(350); // centered, not slammed to the top
+  expect(layer.hasAttribute('data-entering')).toBe(false); // fade started
+  expect(layer.style.visibility).toBe('visible');
+});
+
+test('opacity-only: the effect never sets an inline filter or transition', () => {
+  caret = { paragraphId: 'P1a', offset: 0 };
+  requestLevel(-1);
+  const layer = viewport.querySelector('.level-layer[data-entering]') as HTMLElement;
+  flushFrame();
+
+  // The crossfade is driven entirely by the .level-layer opacity rule (§4.2);
+  // the effect touches only visibility, never a filter/layout transition (D1).
+  expect(layer.style.filter).toBe('');
+  expect(layer.style.transition).toBe('');
+});
+
+test('transitionend unmounts the old layer and clears [data-transitioning]', () => {
+  caret = { paragraphId: 'P1a', offset: 0 };
+  requestLevel(-1);
+  const layer = viewport.querySelector('.level-layer[data-entering]') as HTMLElement;
+  flushFrame();
+  fireOpacityEnd(layer);
+
+  const layers = viewport.querySelectorAll('.level-layer');
+  expect(layers.length).toBe(1);
+  expect((layers[0] as HTMLElement).dataset.level).toBe('-1');
+  expect(viewport.hasAttribute('data-transitioning')).toBe(false);
+  expect(viewport.dataset.zoom).toBe('-1');
+});
+
+test('regression: a stale level-0 caret does not crash a transition FROM sections', () => {
+  // Reproduces the reported hang, following the real flow: click raw content
+  // (sets caret paragraphId), zoom to Sections, then zoom back. Before the fix,
+  // at source −1 the stale P-id was used as the anchor and `mapAcrossLevels`
+  // did `table.sections[<pid>].children[0]` → threw → the switchMap subscription
+  // errored and ALL further zoom switches stopped responding.
+  caret = { paragraphId: 'P1a', offset: 0 }; // clicked a raw paragraph
+
+  // 0 → −1 and settle (store zoom tracks via requestLevel's zoomSet).
+  requestLevel(-1);
+  let entering = viewport.querySelector('.level-layer[data-entering]') as HTMLElement;
+  flushFrame();
+  fireOpacityEnd(entering);
+  expect(viewport.querySelector('.level-layer')?.getAttribute('data-level')).toBe('-1');
+
+  // The caret pid is still stale at −1. Zooming back to raw must NOT throw
+  // (a throw would error the switchMap subscription forever)...
+  expect(() => requestLevel(0)).not.toThrow();
+  // ...and the transition still runs: an entering level-0 layer is appended.
+  expect(
+    viewport.querySelectorAll('.level-layer[data-level="0"][data-entering]').length,
+  ).toBe(1);
+
+  // Crucially, zoom STILL responds afterward — settle, then zoom again.
+  entering = viewport.querySelector('.level-layer[data-entering]') as HTMLElement;
+  flushFrame();
+  fireOpacityEnd(entering);
+  requestLevel(-2);
+  expect(viewport.querySelectorAll('.level-layer[data-entering]').length).toBe(1);
+});
+
+// --- measureTargetTop: reading through `content-visibility: auto` -----------
+
+test('measureTargetTop force-renders the target\'s group for the read, then restores it', () => {
+  const { layer, group, node } = makeLayer();
+  group.style.contentVisibility = 'auto'; // as focus-mask.css sets it (D8)
+  stubMetrics(layer, 400, 2000);
+  stubBox(node, 500, 100);
+
+  // Capture what content-visibility was AT THE MOMENT the descendant was read:
+  // that is the whole point — a skipped group yields offsetTop 0.
+  let seenDuringRead: string | null = null;
+  Object.defineProperty(node, 'offsetTop', {
+    configurable: true,
+    get() {
+      seenDuringRead = group.style.contentVisibility;
+      return 500;
+    },
+  });
+
+  const top = measureTargetTop(layer, 0, 'P1a');
+
+  expect(seenDuringRead).toBe('visible');            // forced to render
+  expect(group.style.contentVisibility).toBe('auto'); // ...and restored
+  expect(top).toBe(350);                              // 500 + 100/2 - 400/2
+});
+
+test('measureTargetTop leaves the group untouched when the group IS the target (−1/−2)', () => {
+  const { layer, group } = makeLayer();
+  group.style.contentVisibility = 'auto';
+  stubMetrics(layer, 400, 2000);
+  stubBox(group, 500, 100);
+
+  let touched = false;
+  Object.defineProperty(group, 'offsetTop', {
+    configurable: true,
+    get() {
+      touched = group.style.contentVisibility !== 'auto';
+      return 500;
+    },
+  });
+
+  expect(measureTargetTop(layer, -1, 'S1')).toBe(350);
+  expect(touched).toBe(false); // a .pgroup always has its own box
+  expect(group.style.contentVisibility).toBe('auto');
+});
+
+test('measureTargetTop returns null when the target is absent from the layer', () => {
+  const { layer } = makeLayer();
+  expect(measureTargetTop(layer, 0, 'P-nope')).toBe(null);
+});
+
+// --- settleScroll: converge onto the true offset over a few frames ----------
+
+test('settleScroll stops immediately when already converged (no scroll command)', () => {
+  const { layer, node } = makeLayer();
+  stubMetrics(layer, 400, 2000);
+  stubBox(node, 500, 100); // target top = 350
+  Object.defineProperty(layer, 'scrollTop', { value: 350, configurable: true });
+
+  const scheduled: (() => void)[] = [];
+  settleScroll(layer, 0, 'P1a', 5, (cb) => void scheduled.push(cb));
+
+  expect(scrolls.length).toBe(0); // nothing to write
+  expect(scheduled.length).toBe(0); // and nothing to re-check
+});
+
+test('settleScroll re-enqueues while not converged, capped at the frame budget', () => {
+  const { layer, node } = makeLayer();
+  stubMetrics(layer, 400, 2000);
+  stubBox(node, 500, 100); // target top = 350, layer.scrollTop stays 0 in jsdom
+
+  // Drive the chain by hand: each scheduled callback is one animation frame.
+  const scheduled: (() => void)[] = [];
+  const schedule = (cb: () => void): void => void scheduled.push(cb);
+  settleScroll(layer, 0, 'P1a', 5, schedule);
+
+  let frames = 0;
+  while (scheduled.length) {
+    frames++;
+    (scheduled.shift() as () => void)();
+    expect(frames).toBeLessThanOrEqual(5); // hard cap, never a runaway loop
+  }
+
+  // Never converges (jsdom never applies the scroll), so it burns the whole
+  // budget: the initial measure + 5 settle frames = 6 commands, then stops.
+  expect(frames).toBe(5);
+  expect(scrolls.length).toBe(6);
+  for (const c of scrolls) {
+    expect(c.el).toBe(layer);
+    expect(c.top).toBe(350);
+  }
+});
+
+test('settleScroll writes scroll ONLY through the scrollCommands$ queue', () => {
+  const { layer, node } = makeLayer();
+  stubMetrics(layer, 400, 2000);
+  stubBox(node, 500, 100);
+
+  let directWrites = 0;
+  Object.defineProperty(layer, 'scrollTop', {
+    configurable: true,
+    get: () => 0,
+    set: () => {
+      directWrites++;
+    },
+  });
+
+  settleScroll(layer, 0, 'P1a', 0, () => {});
+
+  expect(scrolls.length).toBe(1); // enqueued
+  expect(directWrites).toBe(0);   // never assigned synchronously
+});
+
+test('a superseded zoom aborts the previous transition (switchMap) — one final layer', () => {
+  caret = { paragraphId: 'P1a', offset: 0 };
+  requestLevel(-1); // frame n for −1
+  requestLevel(-2); // aborts −1, frame n for −2
+
+  // Exactly one entering layer survives the abort (the −2 one).
+  const entering = viewport.querySelectorAll('.level-layer[data-entering]');
+  expect(entering.length).toBe(1);
+  const layer = entering[0] as HTMLElement;
+  expect(layer.dataset.level).toBe('-2');
+
+  flushFrame();
+  fireOpacityEnd(layer);
+
+  const layers = viewport.querySelectorAll('.level-layer');
+  expect(layers.length).toBe(1);
+  expect((layers[0] as HTMLElement).dataset.level).toBe('-2');
+});
