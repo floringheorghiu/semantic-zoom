@@ -17,6 +17,7 @@ import {
   type ZoomTransitionState,
 } from './ui/viewport';
 import { buildHeader, titlePid } from './ui/header';
+import { buildRawLevel } from './ui/raw-markdown';
 import { mountZoomScrubber } from './ui/zoom-scrubber';
 import { mountCaret, nextParagraph } from './ui/caret';
 import { nextScale, SCALE_DEFAULT } from './ui/content-scale';
@@ -590,14 +591,11 @@ function applyResult(result: LoadResultDTO): void {
     currentTable = null;
     currentIndex = null;
 
-    const layer = document.createElement('div');
-    layer.className = 'level-layer';
-    const pre = document.createElement('pre');
-    pre.textContent = result.raw;
-    layer.appendChild(pre);
-    viewportEl.replaceChildren(layer);
+    viewportEl.replaceChildren(buildRawLevel(result.raw));
     viewportEl.dataset.zoom = '0';
-    // Raw view has no `.pnode`s or `.pgroup`s — no caret or focus-mask target.
+    // Raw view has `.pnode`s (styled like native k=0) but no `.pgroup`s and no
+    // `data-pid` (no LookupTable → no D6 ids to key on) — no caret or
+    // focus-mask target.
     caretTeardown?.();
     caretTeardown = null;
     focusMaskTeardown?.();
@@ -1113,12 +1111,7 @@ async function handleDocChanged(): Promise<void> {
     currentLevel = 0;
     prevGroups = new Map();
 
-    const layer = document.createElement('div');
-    layer.className = 'level-layer';
-    const pre = document.createElement('pre');
-    pre.textContent = newResult.raw;
-    layer.appendChild(pre);
-    viewportEl.replaceChildren(layer);
+    viewportEl.replaceChildren(buildRawLevel(newResult.raw));
     viewportEl.dataset.zoom = '0';
     caretTeardown?.();
     caretTeardown = null;
