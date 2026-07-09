@@ -170,6 +170,25 @@ function wrapCodeBlock(pre: HTMLElement): void {
   wrap.appendChild(toggle);
 }
 
+/**
+ * Post-process a freshly-built `.pnode`'s inner HTML: wrap wide tables so they
+ * scroll instead of blowing out the reading column (Ask 4), and cap code
+ * blocks behind the chevron toggle (above). Shared by `buildGroup` (native
+ * k=0 paragraphs) and the untagged/raw-markdown renderer (`./raw-markdown`)
+ * so both paths get identical table/code treatment from one place.
+ */
+export function decoratePnode(node: HTMLElement): void {
+  for (const tbl of node.querySelectorAll('table')) {
+    const scroll = document.createElement('div');
+    scroll.className = 'table-scroll';
+    tbl.replaceWith(scroll);
+    scroll.appendChild(tbl);
+  }
+  for (const pre of node.querySelectorAll<HTMLElement>('pre')) {
+    wrapCodeBlock(pre);
+  }
+}
+
 export function buildGroup(
   table: LookupTable,
   _index: ResolvedIndex,
@@ -194,18 +213,7 @@ export function buildGroup(
     node.dataset.pid = pid;
     node.dataset.kind = paragraph.kind;
     node.innerHTML = paragraph.html;
-    // Let wide tables scroll inside the reading column instead of
-    // blowing it out horizontally (Ask 4).
-    for (const tbl of node.querySelectorAll('table')) {
-      const scroll = document.createElement('div');
-      scroll.className = 'table-scroll';
-      tbl.replaceWith(scroll);
-      scroll.appendChild(tbl);
-    }
-    // Cap long code blocks to a fixed peek height with a chevron to expand.
-    for (const pre of node.querySelectorAll<HTMLElement>('pre')) {
-      wrapCodeBlock(pre);
-    }
+    decoratePnode(node);
     group.appendChild(node);
   }
   return group;
