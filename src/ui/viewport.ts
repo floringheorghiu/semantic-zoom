@@ -309,27 +309,32 @@ function findNode(layer: HTMLElement, level: ZoomLevel, id: string): HTMLElement
 }
 
 /**
- * Measure where `layer` must scroll to center the target node, or null if the
- * node isn't in this layer.
+ * Read `targetId`'s box (`offsetTop`/`offsetHeight`) at `level` inside
+ * `layer`, or null if the node isn't in this layer.
  *
  * `.pgroup` carries `content-visibility: auto` (§4.2, D8), so a group whose
  * contents the browser has SKIPPED gives its descendants no layout box at all:
  * `offsetParent` is null and `el.offsetTop` reads **0**. At target −1/−2 the
  * node we measure IS the `.pgroup` (which always has a box), but at target 0 it
- * is a `.pnode` inside one — so an unguarded read returned 0, `centerScrollTop`
- * clamped to 0, and every zoom back into raw text slammed the view to the top
- * of the document.
+ * is a `.pnode` inside one — so an unguarded read returned 0.
  *
  * The fix is to force just the target's OWN group to render for the duration of
  * the read, then restore whatever was there. Exactly one group is un-skipped,
  * so this stays the "one contained layout" §2.5 asks for — not a full-tree
- * relayout. All reads happen together, before the caller writes any scroll.
+ * relayout. Shared by `measureTargetTop` (centers the target — zoom
+ * transitions) and `topAlignedScrollTop` (aligns it to the top — ⌘↓/⌘↑ item
+ * navigation and the content-map's click-to-navigate). The latter used to
+ * read `el.offsetTop` directly with no such guard, which is exactly why
+ * ⌘↓/⌘↑ moved the highlight but never actually scrolled once the target
+ * paragraph's section was off-screen: the computed target was always 0,
+ * indistinguishable from "no-op" whenever the view happened to already be
+ * near the top.
  */
-export function measureTargetTop(
+function measureTargetBox(
   layer: HTMLElement,
   level: ZoomLevel,
   targetId: string,
-): number | null {
+): { offsetTop: number; offsetHeight: number } | null {
   const el = findNode(layer, level, targetId);
   if (!el) return null;
 
@@ -342,12 +347,48 @@ export function measureTargetTop(
   // --- reads (all of them, together) ---
   const offsetTop = el.offsetTop;
   const offsetHeight = el.offsetHeight;
-  const clientHeight = layer.clientHeight;
-  const scrollHeight = layer.scrollHeight;
 
   if (forced) forced.style.contentVisibility = saved;
 
-  return centerScrollTop({ offsetTop, offsetHeight }, { clientHeight, scrollHeight });
+  return { offsetTop, offsetHeight };
+}
+
+/**
+ * Measure where `layer` must scroll to CENTER the target node, or null if the
+ * node isn't in this layer. Used by the zoom-transition settle (§2.5) — see
+ * `measureTargetBox` for the content-visibility guard this relies on.
+ */
+export function measureTargetTop(
+  layer: HTMLElement,
+  level: ZoomLevel,
+  targetId: string,
+): number | null {
+  const box = measureTargetBox(layer, level, targetId);
+  if (!box) return null;
+  // --- reads (all of them, together) ---
+  const clientHeight = layer.clientHeight;
+  const scrollHeight = layer.scrollHeight;
+  return centerScrollTop(box, { clientHeight, scrollHeight });
+}
+
+/**
+ * Where `layer` must scroll so the target node's TOP sits just below the top
+ * edge — never centered — or null if the node isn't in this layer. Used by
+ * ⌘↓/⌘↑ item navigation and the content-map's click-to-navigate; see
+ * `measureTargetBox` for the content-visibility guard this relies on.
+ */
+export function topAlignedScrollTop(
+  layer: HTMLElement,
+  level: ZoomLevel,
+  targetId: string,
+): number | null {
+  const box = measureTargetBox(layer, level, targetId);
+  if (!box) return null;
+  // --- reads (all of them, together) ---
+  const clientHeight = layer.clientHeight;
+  const scrollHeight = layer.scrollHeight;
+  const max = Math.max(0, scrollHeight - clientHeight);
+  return Math.min(Math.max(box.offsetTop - 24, 0), max);
 }
 
 /** Frames of scroll convergence allowed after the frame-n+1 measurement. */

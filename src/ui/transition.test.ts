@@ -5,6 +5,7 @@ import { buildIndex, type LookupTable, type ZoomLevel } from '../engine/schema';
 import {
   mountZoomTransitions,
   measureTargetTop,
+  topAlignedScrollTop,
   settleScroll,
   mountedBoxes,
   scrollCommands$,
@@ -327,6 +328,71 @@ test('measureTargetTop leaves the group untouched when the group IS the target (
 test('measureTargetTop returns null when the target is absent from the layer', () => {
   const { layer } = makeLayer();
   expect(measureTargetTop(layer, 0, 'P-nope')).toBe(null);
+});
+
+// --- topAlignedScrollTop: ⌘↓/⌘↑ and content-map click-to-navigate -----------
+// Regression: an earlier version of main.ts's scrollItemToTop read
+// `el.offsetTop` directly with no content-visibility guard — the active-group
+// highlight moved (a plain attribute write, no layout dependency) but the
+// viewport never actually scrolled whenever the target paragraph's section
+// was currently skipped, since the computed target was always (wrongly) 0.
+
+test('topAlignedScrollTop force-renders the target\'s group for the read, then restores it (k=0)', () => {
+  const { layer, group, node } = makeLayer();
+  group.style.contentVisibility = 'auto';
+  stubMetrics(layer, 400, 2000);
+  stubBox(node, 500, 100);
+
+  let seenDuringRead: string | null = null;
+  Object.defineProperty(node, 'offsetTop', {
+    configurable: true,
+    get() {
+      seenDuringRead = group.style.contentVisibility;
+      return 500;
+    },
+  });
+
+  const top = topAlignedScrollTop(layer, 0, 'P1a');
+
+  expect(seenDuringRead).toBe('visible');             // forced to render
+  expect(group.style.contentVisibility).toBe('auto');  // ...and restored
+  expect(top).toBe(476);                                // 500 - 24
+});
+
+test('topAlignedScrollTop leaves the group untouched when the group IS the target (k=-1/-2)', () => {
+  const { layer, group } = makeLayer();
+  group.style.contentVisibility = 'auto';
+  stubMetrics(layer, 400, 2000);
+  stubBox(group, 500, 100);
+
+  let touched = false;
+  Object.defineProperty(group, 'offsetTop', {
+    configurable: true,
+    get() {
+      touched = group.style.contentVisibility !== 'auto';
+      return 500;
+    },
+  });
+
+  expect(topAlignedScrollTop(layer, -1, 'S1')).toBe(476);
+  expect(touched).toBe(false); // a .pgroup always has its own box
+  expect(group.style.contentVisibility).toBe('auto');
+});
+
+test('topAlignedScrollTop clamps to [0, scrollHeight - clientHeight]', () => {
+  const { layer, node } = makeLayer();
+  stubMetrics(layer, 400, 2000);
+
+  stubBox(node, 10, 20); // near the very top: 10 - 24 would go negative
+  expect(topAlignedScrollTop(layer, 0, 'P1a')).toBe(0);
+
+  stubBox(node, 1990, 20); // near the very end: past the max scroll
+  expect(topAlignedScrollTop(layer, 0, 'P1a')).toBe(1600); // 2000 - 400
+});
+
+test('topAlignedScrollTop returns null when the target is absent from the layer', () => {
+  const { layer } = makeLayer();
+  expect(topAlignedScrollTop(layer, 0, 'P-nope')).toBe(null);
 });
 
 // --- mountedBoxes: the SOURCE-side anchor read, same content-visibility bug ---
