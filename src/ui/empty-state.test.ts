@@ -49,6 +49,31 @@ test('renders a row per recent file and routes clicks to onSelectRecent', () => 
   expect(onSelectRecent).toHaveBeenCalledWith('/a/CLAUDE.md');
 });
 
+test('renders the logo, and a footer with all six shortcut hints plus the version', () => {
+  const root = document.createElement('div');
+  mountEmptyState(root, {
+    recentFiles: [],
+    onOpen: () => {},
+    onSelectRecent: () => {},
+    version: '9.9.9',
+  });
+
+  expect(root.querySelector('.empty-state__logo svg')).not.toBeNull();
+
+  const hints = root.querySelectorAll('.empty-state__footer .empty-state__footer-hint');
+  expect(hints).toHaveLength(7); // 6 shortcuts + version
+  expect(hints[0].textContent).toBe('⌘1 — raw level');
+  expect(hints[3].textContent).toBe('⌘↓ — next section');
+  expect(root.querySelector('.empty-state__footer-version')?.textContent).toBe('v9.9.9');
+});
+
+test('omits the version chip when no version is provided', () => {
+  const root = document.createElement('div');
+  mountEmptyState(root, { recentFiles: [], onOpen: () => {}, onSelectRecent: () => {} });
+  expect(root.querySelector('.empty-state__footer-version')).toBeNull();
+  expect(root.querySelectorAll('.empty-state__footer-hint')).toHaveLength(6);
+});
+
 test('teardown removes the container from the DOM', () => {
   const root = document.createElement('div');
   const handle = mountEmptyState(root, { recentFiles: [], onOpen: () => {}, onSelectRecent: () => {} });
