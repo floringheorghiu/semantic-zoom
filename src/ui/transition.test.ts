@@ -407,6 +407,50 @@ test('topAlignedScrollTop returns null when the target is absent from the layer'
   expect(topAlignedScrollTop(layer, 'P-nope')).toBe(null);
 });
 
+// --- the offsetParent trap (WebKit ⌘↓/⌘↑ "no scrolling at all" regression) --
+// `content-visibility: auto` implies layout containment, and a layout-
+// contained `.pgroup` becomes its descendants' offsetParent — so a `.pnode`'s
+// bare offsetTop is GROUP-relative (measured in a real engine: pnodes deep in
+// the doc reporting offsets of 46/100/334 instead of thousands). Blink drops
+// the containment synchronously while measureBox's force-visible holds,
+// masking the bug there; WebKit does not, so every computed scroll target was
+// a tiny group-relative number and the view never moved. The chain walk
+// (chainedOffsetTop) must sum el→group→layer.
+
+test('topAlignedScrollTop sums the offsetParent chain when the group is the offsetParent (WebKit containment)', () => {
+  const { layer, group, node } = makeLayer();
+  stubMetrics(layer, 400, 2000);
+  stubBox(group, 318, 480);
+  stubBox(node, 42, 47); // GROUP-relative, as under containment
+  Object.defineProperty(node, 'offsetParent', { configurable: true, get: () => group });
+  Object.defineProperty(group, 'offsetParent', { configurable: true, get: () => layer });
+
+  // 318 (group in layer) + 42 (pnode in group) - 24 = 336 — NOT 42-24=18.
+  expect(topAlignedScrollTop(layer, 'P1a')).toBe(336);
+});
+
+test('topAlignedScrollTop falls back to the group box when forcing never materializes the pnode box', () => {
+  const { layer, group, node } = makeLayer();
+  stubMetrics(layer, 400, 2000);
+  stubBox(group, 318, 480);
+  stubBox(node, 0, 0); // engine ignored the synchronous force: no box at all
+
+  // Coarse-but-real target: the group's top (318 - 24). The caller's settle
+  // pass refines to the exact paragraph once the group actually renders.
+  expect(topAlignedScrollTop(layer, 'P1a')).toBe(294);
+});
+
+test('mountedBoxes sums the offsetParent chain for level-0 pnodes (same containment trap)', () => {
+  const { layer, group, node } = makeLayer();
+  stubBox(group, 318, 480);
+  stubBox(node, 42, 47);
+  Object.defineProperty(node, 'offsetParent', { configurable: true, get: () => group });
+  Object.defineProperty(group, 'offsetParent', { configurable: true, get: () => layer });
+
+  const boxes = mountedBoxes(layer, 0);
+  expect(boxes).toEqual([{ id: 'P1a', offsetTop: 360, offsetHeight: 47 }]); // 318 + 42
+});
+
 // --- mountedBoxes: the SOURCE-side anchor read, same content-visibility bug ---
 // Reported: on a fresh document, scrolled to the very top, with no caret ever
 // placed, clicking zoom-out landed on an unrelated (often much later) section.
