@@ -83,6 +83,36 @@ test('buildMapModel at k=-2: milestone bars only, no separators', () => {
   ]);
 });
 
+test('buildMapModel reflects whichever table it is given — never a cached/previous one', () => {
+  // A second, unrelated table with a different shape (one milestone, three
+  // sections, no boundary). If the map were ever hardcoded or memoized to
+  // the first document it saw, this would still return EXPECTED_SECTION_MODEL.
+  const otherSection = (id: string): LookupTable['sections'][string] => ({
+    id, level: -1, parent: 'M1', children: [], title: id, body: '',
+  });
+  const otherTable: LookupTable = {
+    version: 1,
+    docHash: 'other-doc-hash',
+    meta: { M1: { id: 'M1', level: -2, children: ['X1', 'X2', 'X3'], title: 'M1', body: '' } },
+    sections: { X1: otherSection('X1'), X2: otherSection('X2'), X3: otherSection('X3') },
+    paragraphs: {},
+    order: { meta: ['M1'], sections: ['X1', 'X2', 'X3'], paragraphs: [] },
+  };
+  const otherIndex = buildIndex(otherTable);
+
+  const { table, index } = fixture();
+  const modelFromFixture = buildMapModel(table, index, 0);
+  const modelFromOther = buildMapModel(otherTable, otherIndex, 0);
+
+  expect(modelFromFixture).toEqual(EXPECTED_SECTION_MODEL); // unchanged by the call below
+  expect(modelFromOther).toEqual([
+    { kind: 'bar', id: 'X1' },
+    { kind: 'bar', id: 'X2' },
+    { kind: 'bar', id: 'X3' },
+  ]);
+  expect(modelFromOther).not.toEqual(modelFromFixture);
+});
+
 // --- visibleIds -------------------------------------------------------------
 
 const BOXES = [
