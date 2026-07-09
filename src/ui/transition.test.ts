@@ -50,11 +50,12 @@ function flushFrame(): void {
 let viewport: HTMLElement;
 let level: ZoomLevel;
 let caret: { paragraphId: string | null; offset: number };
+let caretIsCurrent: boolean;
 const lastCaretIn = new Map<string, string>();
 const lastAnchorIn = new Map<string, string>();
 
 function getState(): ZoomTransitionState {
-  return { table, index, level, caret, lastCaretIn, lastAnchorIn };
+  return { table, index, level, caret, caretIsCurrent, lastCaretIn, lastAnchorIn };
 }
 
 /** Mimic main.ts requestLevel: dispatch ZOOM_SET, then advance the source. */
@@ -84,6 +85,7 @@ beforeEach(() => {
   actions$.next(zoomSet(0));
   level = 0;
   caret = { paragraphId: null, offset: 0 };
+  caretIsCurrent = true; // default: no fixture scrolls the caret away
   lastCaretIn.clear();
   lastAnchorIn.clear();
 
@@ -205,6 +207,43 @@ test('transitionend unmounts the old layer and clears [data-transitioning]', () 
   expect((layers[0] as HTMLElement).dataset.level).toBe('-1');
   expect(viewport.hasAttribute('data-transitioning')).toBe(false);
   expect(viewport.dataset.zoom).toBe('-1');
+});
+
+test('a caret you have scrolled away from (caretIsCurrent=false) is ignored — falls back to nearest-center', () => {
+  const layer = viewport.querySelector('.level-layer') as HTMLElement;
+  const [p1a, p1b, p2a, p2b] = Array.from(layer.querySelectorAll<HTMLElement>('.pnode'));
+  stubBox(p1a, 0, 10);
+  stubBox(p1b, 10, 10);
+  stubBox(p2a, 1000, 10);
+  stubBox(p2b, 1010, 10);
+  stubMetrics(layer, 2000, 3000); // center = scrollTop(0) + 2000/2 = 1000 → nearest is P2a
+
+  caret = { paragraphId: 'P1a', offset: 0 }; // an old click, in S1
+  caretIsCurrent = false; // ...but the user has since scrolled away from it
+  requestLevel(-1);
+
+  // recordPlace (§2.5) records the ancestor of whichever anchor was actually
+  // used — S2 (P2a's parent, nearest-center), NOT S1 (the stale caret's
+  // section). Proves the stale caret was ignored, not just "also considered."
+  expect(lastCaretIn.get('S2')).toBe('P2a');
+  expect(lastCaretIn.has('S1')).toBe(false);
+});
+
+test('by contrast, a caret that IS still current wins over nearest-center', () => {
+  const layer = viewport.querySelector('.level-layer') as HTMLElement;
+  const [p1a, p1b, p2a, p2b] = Array.from(layer.querySelectorAll<HTMLElement>('.pnode'));
+  stubBox(p1a, 0, 10);
+  stubBox(p1b, 10, 10);
+  stubBox(p2a, 1000, 10);
+  stubBox(p2b, 1010, 10);
+  stubMetrics(layer, 2000, 3000); // same geometry — nearest-center would pick P2a
+
+  caret = { paragraphId: 'P1a', offset: 0 };
+  caretIsCurrent = true; // no scroll since placing it — still authoritative
+  requestLevel(-1);
+
+  expect(lastCaretIn.get('S1')).toBe('P1a');
+  expect(lastCaretIn.has('S2')).toBe(false);
 });
 
 test('regression: a stale level-0 caret does not crash a transition FROM sections', () => {

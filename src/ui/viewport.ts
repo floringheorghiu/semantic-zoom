@@ -190,6 +190,15 @@ export interface ZoomTransitionState {
   /** The level currently mounted (the transition's SOURCE). */
   level: ZoomLevel;
   caret: { paragraphId: string | null; offset: number };
+  /**
+   * False once the user has scrolled since the caret was placed. Refines
+   * spec §2.5 anchor rule 1 ("caret always wins once placed"): without this,
+   * zoom-out from L0 anchors to an arbitrarily old click regardless of where
+   * you've since scrolled to, which reads as the view jumping somewhere
+   * unrelated to your current position. Scrolling-with-no-click-since now
+   * falls through to anchor rule 2 (nearest-to-center) instead.
+   */
+  caretIsCurrent: boolean;
   lastCaretIn: Map<string, string>;
   lastAnchorIn: Map<string, string>;
 }
@@ -338,7 +347,9 @@ function runTransition(
     // when zooming FROM raw. At −1/−2 fall back to nearest-center (a section/
     // meta id); otherwise a stale caret pid would be mapped as if it were a
     // section id (`table.sections[pid]` → undefined) and crash the transition.
-    const caretAnchor = source === 0 ? st.caret.paragraphId : null;
+    // ALSO requires `caretIsCurrent` — see its doc comment: a caret you
+    // haven't touched since scrolling away from it is not "where you are."
+    const caretAnchor = source === 0 && st.caretIsCurrent ? st.caret.paragraphId : null;
     const anchorId = resolveAnchor(caretAnchor, boxes, center);
 
     // Remember the place we're leaving (whole ancestor chain) so zooming back
