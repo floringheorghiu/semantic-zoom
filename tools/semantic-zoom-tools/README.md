@@ -46,8 +46,9 @@ Two ways to load it:
 
 ```bash
 npm install   # run from the plugin root, where package.json lives
+npm test      # runs tests/ via node --test — no extra setup needed
 ```
-Only needed for `segment.mjs`/`assemble.mjs`. The hook itself has no dependencies and works immediately.
+`npm install` is only needed for `segment.mjs`/`assemble.mjs`. The hook itself has no dependencies and works immediately.
 
 The skill's final verification step (5) also needs `cargo` on `PATH` — already
 a requirement for this repo generally (Tauri). `cargo run --bin verify_payload`
@@ -123,6 +124,41 @@ actually do with a given file, and the app genuinely does report
 to "no marker" in the JS mirror would itself be a drift from the real app,
 the opposite of what this validator exists to prevent.
 
+**Follow-up hardening, thinking one step further than the minimal fix:** a
+bare `JSON.parse` check alone still has a gap — a short illustrative example
+that happens to be syntactically valid JSON (say, a tiny sample object
+shown to demonstrate "the shape," with none of a real payload's actual
+content) would still pass. The app's real Rust extractor doesn't just check
+"is this JSON," it deserializes straight into the typed `LookupTable`
+struct, which requires specific top-level keys. `findExistingMarkerStart`
+now checks for that shape too (`looksLikeLookupTable`: has `version`,
+`docHash`, `meta`, `sections`, `paragraphs`, `order`) before trusting a
+candidate marker, closing that remaining gap rather than leaving it for a
+fourth incident to find.
+
+## Automated regression coverage
+
+`tests/` (`npm test`, Node's built-in test runner — no new dependency,
+matching `validate.mjs`'s own zero-dependency stance) turns the manual
+testing below into something that can't silently regress:
+
+- `segment.test.mjs` — the UTF-16/UTF-8 offset bug: a code block and a
+  prose paragraph downstream of dense non-ASCII text must have exact,
+  unmangled spans; duplicate-content ordinal disambiguation.
+- `marker-detection.test.mjs` — the marker-detection bug, both layers: a
+  non-JSON illustrative example, AND a syntactically-valid-but-wrong-shape
+  one, must both be treated as absent; a real payload must still be found.
+- `assemble-integration.test.mjs` — end-to-end CLI behavior: idempotent
+  re-assembly (byte-identical on a second run), non-contiguous grouping
+  rejection, a freshly assembled file always passing `validate.mjs`, and
+  the bug #3 scenario end-to-end (segment → assemble → validate on a
+  document whose own prose describes the marker syntax).
+
+Each test in `marker-detection.test.mjs` was confirmed to actually fail
+when the fix it covers was temporarily reverted (a real mutation check, not
+just "the test happens to be green") before being committed alongside the
+fix.
+
 ## Tested
 
-Every script above was run end-to-end against a synthetic fixture during development, including: duplicate-content ordinal disambiguation, non-contiguous grouping rejection, orphan-block detection, hand-edit drift detection (cascading span invalidation), idempotent re-assembly convergence, and the exact `PostToolUse` stdin contract. Additionally run end-to-end against two real files from this repo — `docs/packaging.md` (headings, code fences, a list, em dashes and arrows throughout) and `docs/semantic-zoom-tools.md` (this plugin's own architecture doc, which is what surfaced the marker-detection bug above) — with both resulting payloads verified against the app's own compiled `validate()`/`verify_ids()` via `verify_payload`, not just the JS mirror. Not a substitute for testing against your own real files, but the plumbing has been exercised on both synthetic and real content, not just written.
+Every script above was run end-to-end against a synthetic fixture during development, including: duplicate-content ordinal disambiguation, non-contiguous grouping rejection, orphan-block detection, hand-edit drift detection (cascading span invalidation), idempotent re-assembly convergence, and the exact `PostToolUse` stdin contract — see "Automated regression coverage" above for which of these are now enforced by `npm test` rather than only exercised manually. Additionally run end-to-end against two real files from this repo — `docs/packaging.md` (headings, code fences, a list, em dashes and arrows throughout) and `docs/semantic-zoom-tools.md` (this plugin's own architecture doc, which is what surfaced the marker-detection bug above) — with both resulting payloads verified against the app's own compiled `validate()`/`verify_ids()` via `verify_payload`, not just the JS mirror. Not a substitute for testing against your own real files, but the plumbing has been exercised on both synthetic and real content, not just written.

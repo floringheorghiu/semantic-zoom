@@ -62,25 +62,42 @@ function fail(msg) {
  * text in the file — lastIndexOf alone still misidentified it as an
  * existing payload to strip, truncating the rest of the document.
  *
- * The app's own Rust extractor only accepts a marker whose content actually
- * parses as JSON (a marker-shaped region that doesn't parse becomes
- * `LoadResult::Corrupt`, never silently misinterpreted). This mirrors that
- * discipline: require the candidate region to parse before trusting it's a
- * real payload, so assemble.mjs never truncates real content sitting in
- * front of what turns out to be prose.
+ * The app's own Rust extractor doesn't just check "is this valid JSON" — it
+ * deserializes straight into the typed `LookupTable` struct
+ * (`serde_json::from_str::<LookupTable>`), which rejects a syntactically
+ * valid JSON value that's simply the WRONG SHAPE just as surely as it
+ * rejects non-JSON. A short illustrative example — say, a small JSON object
+ * shown as a minimal sample of the payload shape — would pass a bare
+ * `JSON.parse` and still be mistaken for a real payload by an earlier
+ * version of this function; checking for the required top-level keys closes
+ * that gap and matches what the Rust struct actually requires (see
+ * `docs/prompts/payload-format.md`'s JSON Schema `required` list).
  */
-function findExistingMarkerStart(rawFull) {
+const REQUIRED_TOP_LEVEL_KEYS = ['version', 'docHash', 'meta', 'sections', 'paragraphs', 'order'];
+
+export function looksLikeLookupTable(value) {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    REQUIRED_TOP_LEVEL_KEYS.every((key) => key in value)
+  );
+}
+
+export function findExistingMarkerStart(rawFull) {
   const head = rawFull.lastIndexOf(MARKER_HEAD);
   if (head === -1) return -1;
   const jsonStart = head + MARKER_HEAD.length;
   const tail = rawFull.lastIndexOf(MARKER_TAIL);
   if (tail === -1 || tail < jsonStart) return -1;
   const candidate = rawFull.slice(jsonStart, tail).trim().split('--\\u003e').join('-->');
+  let parsed;
   try {
-    JSON.parse(candidate);
+    parsed = JSON.parse(candidate);
   } catch {
     return -1; // marker-shaped text that isn't actually a payload — treat as absent
   }
+  if (!looksLikeLookupTable(parsed)) return -1; // valid JSON, wrong shape — same treatment
   return head;
 }
 
@@ -248,4 +265,9 @@ function contentHashOfLeading(text) {
   return createHash('sha256').update(text, 'utf8').digest('hex').slice(0, 8);
 }
 
-main();
+// ---- CLI ---- (guarded, same pattern as segment.mjs/validate.mjs, so this
+// module can be imported for its exports — e.g. by tests — without
+// immediately trying to run main() against an empty argv.)
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main();
+}
