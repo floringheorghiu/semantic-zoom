@@ -1,19 +1,25 @@
-// Regression coverage for bug #3 (see README's "A second real bug"):
-// assemble.mjs's marker detection used a bare indexOf/lastIndexOf on the
-// marker TEXT with no check that what followed was an actual payload — so
-// a document that merely DESCRIBES the marker syntax in its own prose (this
-// plugin's own docs/semantic-zoom-tools.md, in practice) got its
-// explanatory sentence mistaken for an existing payload and truncated.
+// Regression coverage for the marker-detection bug family (see README's
+// "A second real bug"): marker location must never mistake marker TEXT for
+// a real payload. A document that merely DESCRIBES the marker syntax in
+// prose (this plugin's own docs/semantic-zoom-tools.md, in practice) got
+// its explanatory sentence matched by a bare indexOf/lastIndexOf and
+// everything after it truncated as "the old payload".
 //
-// findExistingMarkerStart fixes this two ways, tested separately below:
-// requiring the candidate region to parse as JSON at all, AND requiring it
-// to have the shape of a real LookupTable (not just any valid JSON value) —
-// the second check matches what the app's real Rust extractor guarantees
-// via a typed deserialize, not just "is this JSON."
+// findExistingPayload defends in layers, each tested separately below:
+// the candidate region must parse as JSON at all; it must have the shape
+// of a real LookupTable (not just any valid JSON — matching the Rust
+// extractor's typed deserialize); the tail is the FIRST `-->` after the
+// head (A3 guarantees a real payload contains no literal one, and a
+// whole-file last-tail scan let stray `-->`s after the payload corrupt
+// detection); and heads are scanned backward so quoted examples never
+// shadow a real payload.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { findExistingMarkerStart, looksLikeLookupTable } from '../scripts/assemble.mjs';
+// Imported from validate.mjs — the dependency-free base module where the
+// shared detection primitives live (so these tests also run without the
+// segment/assemble dependency chain, i.e. before npm install).
+import { findExistingPayload, looksLikeLookupTable } from '../scripts/validate.mjs';
 
 const REAL_TABLE = {
   version: 1,
@@ -28,7 +34,7 @@ test('prose that quotes the marker as a non-JSON illustrative example is not mis
   const source =
     'This tool embeds a `<!-- semantic-zoom:payload:v1 ... -->` block at the end of the file.\n\n' +
     'The rest of this document must survive completely intact.\n';
-  assert.equal(findExistingMarkerStart(source), -1);
+  assert.equal(findExistingPayload(source), null);
 });
 
 test('prose whose illustrative example happens to be syntactically valid JSON, but the wrong shape, is not mistaken for a payload', () => {
@@ -38,14 +44,42 @@ test('prose whose illustrative example happens to be syntactically valid JSON, b
   const source =
     'A minimal example: `<!-- semantic-zoom:payload:v1\n{"example": true}\n-->`\n\n' +
     'The rest of this document must survive completely intact.\n';
-  assert.equal(findExistingMarkerStart(source), -1);
+  assert.equal(findExistingPayload(source), null);
 });
 
-test('a real, well-formed LookupTable payload IS recognized as an existing marker', () => {
+test('a real, well-formed LookupTable payload IS recognized, with exact head and end offsets', () => {
   const json = JSON.stringify(REAL_TABLE);
-  const source = `Some content.\n\n<!-- semantic-zoom:payload:v1\n${json}\n-->\n`;
-  const found = findExistingMarkerStart(source);
-  assert.equal(found, source.lastIndexOf('<!-- semantic-zoom:payload:v1'));
+  const doc = 'Some content.\n\n';
+  const source = `${doc}<!-- semantic-zoom:payload:v1\n${json}\n-->\n`;
+  const found = findExistingPayload(source);
+  assert.ok(found, 'expected the payload to be found');
+  // Hardcoded expectations, NOT recomputed with the same string search the
+  // implementation uses — a shared-bug recomputation would stay green
+  // through exactly the regressions this test exists to catch.
+  assert.equal(found.head, 15); // 'Some content.\n\n'.length
+  assert.equal(found.end, source.length - 1); // everything but the final \n
+});
+
+test('a real payload is still found when marker text is ALSO quoted in prose before it', () => {
+  const json = JSON.stringify(REAL_TABLE);
+  const source =
+    'Prose quoting `<!-- semantic-zoom:payload:v1 ... -->` as an example.\n\n' +
+    `<!-- semantic-zoom:payload:v1\n${json}\n-->\n`;
+  const found = findExistingPayload(source);
+  assert.ok(found, 'the real payload must win over the earlier prose mention');
+  assert.equal(source.slice(found.end - 3, found.end), '-->');
+  assert.ok(found.head > 20, 'must be the real marker, not the prose mention at index 14');
+});
+
+test("a stray '-->' in content AFTER the real payload does not break detection (first-tail rule)", () => {
+  const json = JSON.stringify(REAL_TABLE);
+  const source =
+    `Content.\n\n<!-- semantic-zoom:payload:v1\n${json}\n-->\n\n` +
+    'Appended note: A --> B\n';
+  const found = findExistingPayload(source);
+  assert.ok(found, 'payload must still be detected despite the later stray tail');
+  // end must be the payload's own closer, not the stray one in the note.
+  assert.equal(source.slice(found.end).includes('Appended note'), true);
 });
 
 test('looksLikeLookupTable rejects arrays, null, and objects missing required keys', () => {
