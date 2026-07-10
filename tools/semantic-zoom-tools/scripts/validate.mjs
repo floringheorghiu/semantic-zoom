@@ -33,7 +33,15 @@ function sha256(buf) {
 // events; sidestepping the problem beats defending against it twice).
 // Returns { ok: true, noMarker?: true } or { ok: false, errors: string[] }.
 export function validate(raw) {
-  const head = raw.indexOf(MARKER_HEAD);
+  // lastIndexOf, not indexOf: the app's Rust extractor locates the head
+  // with `rfind` too, not just the tail below — the real payload lives at
+  // EOF. A forward indexOf here matches the first occurrence of the marker
+  // TEXT anywhere in the file, which is a real failure mode for a document
+  // that describes the marker syntax in its own prose (this file's sibling
+  // assemble.mjs hit exactly this while tagging docs/semantic-zoom-tools.md
+  // — its own explanatory sentence mentioning the marker got matched as if
+  // it were a real payload).
+  const head = raw.lastIndexOf(MARKER_HEAD);
   if (head === -1) return { ok: true, noMarker: true };
 
   const jsonStart = head + MARKER_HEAD.length;
