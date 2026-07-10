@@ -12,7 +12,19 @@ Lives at `tools/semantic-zoom-tools/` in the `semantic-zoom` repo — a
 self-contained plugin root (own `.claude-plugin/plugin.json`), but
 positioned as a sibling of `src-tauri/` so its final verification step can
 build and run the app's own Rust binary (`../../src-tauri` from here).
-Load it locally with `claude --plugin-dir tools/semantic-zoom-tools`.
+
+Two ways to load it:
+
+- **Per-session, quick:** `claude --plugin-dir tools/semantic-zoom-tools`
+  (from the repo root). Works immediately, only for that session.
+- **Persistent, via the local marketplace at the repo root
+  (`marketplace.json`):**
+  ```
+  claude plugin marketplace add ./marketplace.json
+  claude plugin install semantic-zoom-tools
+  ```
+  Registers it so `/reload-plugins` and future sessions pick it up
+  automatically, without needing `--plugin-dir` every time.
 
 ## Components
 
