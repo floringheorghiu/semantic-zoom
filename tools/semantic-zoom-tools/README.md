@@ -93,6 +93,36 @@ Two things followed from this, on top of the fix itself:
   the app's actual compiled `validate()`/`verify_ids()` is what catches
   that class of bug, not a better JS reimplementation.
 
+## A second real bug: marker detection matched its own documentation
+
+Found while using this plugin to tag `docs/semantic-zoom-tools.md` — a
+document that explains this exact payload format, and therefore quotes the
+literal marker syntax in its own prose, once as a complete illustrative
+`<!-- semantic-zoom:payload:v1 ... -->` snippet.
+
+`assemble.mjs` and `validate.mjs` both located "the marker" with a bare
+`indexOf`/`lastIndexOf(MARKER_HEAD)` — no check that what follows is an
+actual payload, just that the marker TEXT appears somewhere. For a file
+that merely *describes* the marker in prose, that text is the only
+occurrence in the file, so even `lastIndexOf` alone still matched it and
+`assemble.mjs` treated everything after it as an existing payload to strip
+before regenerating — silently truncating the rest of the document.
+
+Fixed in `assemble.mjs` with a `findExistingMarkerStart` helper that
+requires the candidate content between head and tail to actually parse as
+JSON before treating it as a real payload; a marker-shaped false positive
+falls back to "nothing to strip," matching what the app's own Rust
+extractor effectively guarantees (a marker whose content isn't valid JSON
+was never a real payload in the first place — see `docs/payload-format.md`
+addendum A3, `-->` escaping, for why the real extractor takes the same
+skeptical stance and matches the LAST occurrence, not the first).
+`validate.mjs` was left with the narrower `indexOf`→`lastIndexOf` fix only
+(no JSON-parse fallback) — its job is to mirror what the shipping app would
+actually do with a given file, and the app genuinely does report
+`Corrupt` for marker-shaped-but-unparseable text; silently downgrading that
+to "no marker" in the JS mirror would itself be a drift from the real app,
+the opposite of what this validator exists to prevent.
+
 ## Tested
 
-Every script above was run end-to-end against a synthetic fixture during development, including: duplicate-content ordinal disambiguation, non-contiguous grouping rejection, orphan-block detection, hand-edit drift detection (cascading span invalidation), idempotent re-assembly convergence, and the exact `PostToolUse` stdin contract. Additionally run end-to-end against a real file from this repo (`docs/packaging.md` — headings, code fences, a list, em dashes and arrows throughout), with the resulting payload verified against the app's own compiled `validate()`/`verify_ids()` via `verify_payload`, not just the JS mirror. Not a substitute for testing against your own real files, but the plumbing has been exercised on both synthetic and real content, not just written.
+Every script above was run end-to-end against a synthetic fixture during development, including: duplicate-content ordinal disambiguation, non-contiguous grouping rejection, orphan-block detection, hand-edit drift detection (cascading span invalidation), idempotent re-assembly convergence, and the exact `PostToolUse` stdin contract. Additionally run end-to-end against two real files from this repo — `docs/packaging.md` (headings, code fences, a list, em dashes and arrows throughout) and `docs/semantic-zoom-tools.md` (this plugin's own architecture doc, which is what surfaced the marker-detection bug above) — with both resulting payloads verified against the app's own compiled `validate()`/`verify_ids()` via `verify_payload`, not just the JS mirror. Not a substitute for testing against your own real files, but the plumbing has been exercised on both synthetic and real content, not just written.

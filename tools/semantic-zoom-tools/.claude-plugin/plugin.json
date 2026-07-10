@@ -1,7 +1,7 @@
 {
   "name": "semantic-zoom-tools",
   "description": "Generate Semantic Zoom .md fixtures/content with an embedded LookupTable payload — deterministic content-addressed IDs, validated referential integrity, D6/A1-A4 contract compliance.",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "author": {
     "name": "Florin"
   }
