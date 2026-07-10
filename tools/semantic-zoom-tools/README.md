@@ -109,14 +109,15 @@ occurrence in the file, so even `lastIndexOf` alone still matched it and
 `assemble.mjs` treated everything after it as an existing payload to strip
 before regenerating — silently truncating the rest of the document.
 
-Fixed in `assemble.mjs` with a `findExistingMarkerStart` helper that
+Fixed with a detection helper (today: `findExistingPayload` in
+`validate.mjs` — see "Review hardening" below for how it evolved) that
 requires the candidate content between head and tail to actually parse as
 JSON before treating it as a real payload; a marker-shaped false positive
 falls back to "nothing to strip," matching what the app's own Rust
 extractor effectively guarantees (a marker whose content isn't valid JSON
-was never a real payload in the first place — see `docs/payload-format.md`
-addendum A3, `-->` escaping, for why the real extractor takes the same
-skeptical stance and matches the LAST occurrence, not the first).
+was never a real payload in the first place — see
+`docs/prompts/payload-format.md` addendum A3, `-->` escaping, for why the
+real extractor takes the same skeptical stance).
 `validate.mjs` was left with the narrower `indexOf`→`lastIndexOf` fix only
 (no JSON-parse fallback) — its job is to mirror what the shipping app would
 actually do with a given file, and the app genuinely does report
@@ -130,11 +131,70 @@ that happens to be syntactically valid JSON (say, a tiny sample object
 shown to demonstrate "the shape," with none of a real payload's actual
 content) would still pass. The app's real Rust extractor doesn't just check
 "is this JSON," it deserializes straight into the typed `LookupTable`
-struct, which requires specific top-level keys. `findExistingMarkerStart`
-now checks for that shape too (`looksLikeLookupTable`: has `version`,
-`docHash`, `meta`, `sections`, `paragraphs`, `order`) before trusting a
-candidate marker, closing that remaining gap rather than leaving it for a
-fourth incident to find.
+struct, which requires specific top-level keys. Detection now checks for
+that shape too (`looksLikeLookupTable`: has `version`, `docHash`, `meta`,
+`sections`, `paragraphs`, `order`) before trusting a candidate marker,
+closing that remaining gap rather than leaving it for a fourth incident to
+find.
+
+## Review hardening (v1.3.0)
+
+A recall-oriented multi-agent code review of the changes above surfaced —
+and fixed — a further batch of real defects, several confirmed by actually
+executing the failure scenario, plus one pre-existing workflow bug the new
+tests exposed on their first run:
+
+- **The CLI entry guard silently failed open.** All three scripts guarded
+  their CLI block with `import.meta.url === 'file://' + process.argv[1]`,
+  which evaluates false for relative invocations, paths containing spaces
+  or non-ASCII characters (URLs percent-encode), symlinked paths (Node
+  realpaths the main module — even `/tmp` vs `/private/tmp` broke it), and
+  Windows drive paths — the script would exit 0 having done NOTHING, which
+  callers read as success. Replaced with `isCliInvocation()` in
+  `validate.mjs` (realpath + `pathToFileURL`), used by all three; covered
+  by an integration test that invokes `assemble.mjs` through a symlink in a
+  directory with a space in its name.
+- **Detection now bounds the payload with the FIRST `-->` after the head**,
+  not the file's last: A3 guarantees a real payload contains no literal
+  `-->`, and the old whole-file `lastIndexOf` let any stray `-->` in
+  content after the payload corrupt the candidate and un-detect a tagged
+  file. Heads are scanned backward, so a quoted example before a real
+  payload can't shadow it.
+- **Content appended after the payload is preserved, not deleted.** The old
+  `slice(0, markerAt)` silently discarded anything after the marker — the
+  natural EOF append point. Stripping now splices trailing content back
+  into the body.
+- **A damaged payload at EOF fails loudly with recovery instructions**
+  instead of being silently re-embedded as document content (which is what
+  "treat unparseable as absent" alone would do — the corrupt block would
+  become prose and validate would then pass forever).
+- **The payload writer now escapes quoted marker-HEAD text inside JSON
+  strings** (the head's `<` becomes its JSON unicode escape), symmetric with
+  A3's tail escaping. Without it, a section body quoting the marker syntax
+  would put the literal head text inside the payload — where the app's own
+  `rfind(HEAD)` would land and report the whole file Corrupt.
+- **`segment.mjs` now segments the same canonical pre-payload source
+  `assemble.mjs` derives spans against** (shared `prePayloadSource()` in
+  `validate.mjs`). Previously it segmented the raw file verbatim, payload
+  comment included — which made the documented refresh flow structurally
+  broken for already-tagged files (step-1 ids could never resolve in step
+  3). The new trailing-content test caught this on its first run.
+- The detection/strip primitives moved to `validate.mjs` — the
+  dependency-free base of the plugin's import graph — resolving the
+  reviewers' duplication finding (marker constants + locate-and-parse
+  mechanics previously copy-pasted across two files) without an import
+  cycle, and making the marker-detection tests runnable before
+  `npm install`.
+- Smaller fixes from the same review: `tests/schema-drift.test.mjs` pins
+  `REQUIRED_TOP_LEVEL_KEYS` to `src/engine/payload.schema.json`'s
+  `required` array whenever the repo copy is present (skips on standalone
+  installs); the npm `test` script is plain `node --test` (the previous
+  shell glob didn't expand on Windows cmd.exe); `runExpectFailure` in the
+  integration tests no longer swallows its own assertion; the
+  recognized-payload test asserts hardcoded offsets instead of recomputing
+  them with the same string search the implementation uses; and the app's
+  `vitest.config.ts` exclude is scoped to `tools/semantic-zoom-tools/**`
+  rather than all of `tools/**`.
 
 ## Automated regression coverage
 
@@ -145,19 +205,28 @@ testing below into something that can't silently regress:
 - `segment.test.mjs` — the UTF-16/UTF-8 offset bug: a code block and a
   prose paragraph downstream of dense non-ASCII text must have exact,
   unmangled spans; duplicate-content ordinal disambiguation.
-- `marker-detection.test.mjs` — the marker-detection bug, both layers: a
-  non-JSON illustrative example, AND a syntactically-valid-but-wrong-shape
-  one, must both be treated as absent; a real payload must still be found.
+- `marker-detection.test.mjs` — the marker-detection bug family: a non-JSON
+  illustrative example AND a syntactically-valid-but-wrong-shape one must
+  both be treated as absent; a real payload must be found at exact
+  (hardcoded) offsets, must win over an earlier prose mention, and must
+  survive a stray `-->` in content after it (first-tail rule).
 - `assemble-integration.test.mjs` — end-to-end CLI behavior: idempotent
   re-assembly (byte-identical on a second run), non-contiguous grouping
-  rejection, a freshly assembled file always passing `validate.mjs`, and
-  the bug #3 scenario end-to-end (segment → assemble → validate on a
-  document whose own prose describes the marker syntax).
+  rejection, a freshly assembled file always passing `validate.mjs`, the
+  prose-describing-the-marker scenario end-to-end, content appended after
+  the payload surviving re-assembly, quoted marker-head text being escaped
+  in the payload, a damaged EOF payload failing loudly, and the CLI running
+  through a symlinked path with spaces (entry-guard regression).
+- `schema-drift.test.mjs` — pins `REQUIRED_TOP_LEVEL_KEYS` to the app
+  schema's `required` array when running in-repo; skips standalone.
 
-Each test in `marker-detection.test.mjs` was confirmed to actually fail
-when the fix it covers was temporarily reverted (a real mutation check, not
-just "the test happens to be green") before being committed alongside the
-fix.
+The original shape-check test in `marker-detection.test.mjs` was confirmed
+to actually fail when its fix was temporarily reverted (a real mutation
+check, not just "the test happens to be green") before being committed
+alongside the fix; the trailing-content integration test earned the same
+credential the honest way — it FAILED on its first run, against a bug
+nobody knew was there (the segment-CLI/assemble divergence described under
+"Review hardening").
 
 ## Tested
 

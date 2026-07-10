@@ -37,9 +37,13 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { segment } from './segment.mjs';
-
-const MARKER_HEAD = '<!-- semantic-zoom:payload:v1';
-const MARKER_TAIL = '-->';
+import {
+  MARKER_HEAD,
+  MARKER_TAIL,
+  isCliInvocation,
+  hasDamagedEofMarker,
+  prePayloadSource,
+} from './validate.mjs';
 
 function sha256(buf) {
   return createHash('sha256').update(buf).digest('hex');
@@ -50,72 +54,33 @@ function fail(msg) {
   process.exit(1);
 }
 
-/**
- * Locate an EXISTING, well-formed payload marker's start, or -1 if none
- * exists. Deliberately more than a bare `lastIndexOf(MARKER_HEAD)`: prose
- * that merely DESCRIBES the marker syntax — a document about this very
- * payload format, for instance — can contain the literal marker text, even
- * a complete self-contained `<!-- ... -->` snippet as an illustrative
- * example, with no real payload existing anywhere. Confirmed as a real
- * failure mode while tagging docs/semantic-zoom-tools.md: its own opening
- * sentence, describing the marker syntax, was the ONLY occurrence of that
- * text in the file — lastIndexOf alone still misidentified it as an
- * existing payload to strip, truncating the rest of the document.
- *
- * The app's own Rust extractor doesn't just check "is this valid JSON" — it
- * deserializes straight into the typed `LookupTable` struct
- * (`serde_json::from_str::<LookupTable>`), which rejects a syntactically
- * valid JSON value that's simply the WRONG SHAPE just as surely as it
- * rejects non-JSON. A short illustrative example — say, a small JSON object
- * shown as a minimal sample of the payload shape — would pass a bare
- * `JSON.parse` and still be mistaken for a real payload by an earlier
- * version of this function; checking for the required top-level keys closes
- * that gap and matches what the Rust struct actually requires (see
- * `docs/prompts/payload-format.md`'s JSON Schema `required` list).
- */
-const REQUIRED_TOP_LEVEL_KEYS = ['version', 'docHash', 'meta', 'sections', 'paragraphs', 'order'];
-
-export function looksLikeLookupTable(value) {
-  return (
-    value !== null &&
-    typeof value === 'object' &&
-    !Array.isArray(value) &&
-    REQUIRED_TOP_LEVEL_KEYS.every((key) => key in value)
-  );
-}
-
-export function findExistingMarkerStart(rawFull) {
-  const head = rawFull.lastIndexOf(MARKER_HEAD);
-  if (head === -1) return -1;
-  const jsonStart = head + MARKER_HEAD.length;
-  const tail = rawFull.lastIndexOf(MARKER_TAIL);
-  if (tail === -1 || tail < jsonStart) return -1;
-  const candidate = rawFull.slice(jsonStart, tail).trim().split('--\\u003e').join('-->');
-  let parsed;
-  try {
-    parsed = JSON.parse(candidate);
-  } catch {
-    return -1; // marker-shaped text that isn't actually a payload — treat as absent
-  }
-  if (!looksLikeLookupTable(parsed)) return -1; // valid JSON, wrong shape — same treatment
-  return head;
-}
-
 function main() {
   const [, , mdPath, layersPath] = process.argv;
   if (!mdPath || !layersPath) fail('usage: node assemble.mjs <file.md> <layers.json>');
 
   const rawFull = readFileSync(mdPath, 'utf8');
-  // Always segment the PRE-PAYLOAD region, even on re-runs against an
-  // already-embedded file — this is what makes the script idempotent
-  // instead of accreting stale payloads.
-  const markerAt = findExistingMarkerStart(rawFull);
-  // Strip any existing marker AND the padding this script itself inserts
-  // before it, so re-running on an already-embedded file converges to a
-  // fixed point instead of accumulating a blank line per run (each run's
-  // padding would otherwise become part of the "content" the next run
-  // strips-and-repads, growing the file and changing docHash every time).
-  const raw = (markerAt === -1 ? rawFull : rawFull.slice(0, markerAt)).replace(/\s+$/, '');
+  // The canonical pre-payload source (validate.mjs): genuine payloads
+  // stripped (content after them spliced back in as body, never deleted),
+  // trailing whitespace normalized so re-runs converge byte-identically.
+  // segment.mjs's CLI applies the SAME transformation, so step-1 ids always
+  // resolve here.
+  const raw = prePayloadSource(rawFull);
+  if (hasDamagedEofMarker(raw)) {
+    // Marker-LIKE residue at EOF that is not a genuine payload — almost
+    // certainly a DAMAGED payload (truncated JSON, mangled merge).
+    // Embedding it silently as document content would lock the garbage
+    // into the file as prose; refuse loudly instead. Marker text quoted
+    // mid-document (prose about the format) has real content after it and
+    // sails through untouched.
+    fail(
+      `found marker-like text at end of file that is not a valid payload — ` +
+      `likely a damaged/corrupt payload block. Refusing to embed it as document ` +
+      `content. If it is a broken payload, delete the block (from the ` +
+      `"${MARKER_HEAD}" line to the closing "${MARKER_TAIL}") or restore the file ` +
+      `from version control, then re-run. If it is intentional prose, add real ` +
+      `content after it so it no longer sits alone at EOF.`,
+    );
+  }
   const rawBytes = Buffer.from(raw, 'utf8');
 
   const layers = JSON.parse(readFileSync(layersPath, 'utf8'));
@@ -252,6 +217,16 @@ function main() {
   // A3: escape any literal "-->" inside string values so the marker's own
   // terminator can't appear mid-payload.
   payloadJson = payloadJson.split('-->').join('--\\u003e');
+  // Same discipline for the marker's HEAD text: a section/meta body or code
+  // block that quotes the marker syntax (this repo's own format docs do)
+  // would otherwise ship the head string verbatim inside the JSON — and the
+  // app's Rust extractor locates the payload with rfind(HEAD), which would
+  // then land inside the JSON and report the whole file Corrupt. Escaping
+  // the head's leading '<' as its JSON unicode escape (backslash-u-0-0-3-c)
+  // makes the file bytes unmatchable by any marker scanner while parsing
+  // back to the identical string. In valid JSON, '<' only ever occurs
+  // inside string values, so a blanket replace is safe.
+  payloadJson = payloadJson.split(MARKER_HEAD).join(`\\u003c${MARKER_HEAD.slice(1)}`);
 
   const out = prefix + `${MARKER_HEAD}\n${payloadJson}\n${MARKER_TAIL}\n`;
   writeFileSync(mdPath, out, 'utf8');
@@ -265,9 +240,10 @@ function contentHashOfLeading(text) {
   return createHash('sha256').update(text, 'utf8').digest('hex').slice(0, 8);
 }
 
-// ---- CLI ---- (guarded, same pattern as segment.mjs/validate.mjs, so this
-// module can be imported for its exports — e.g. by tests — without
-// immediately trying to run main() against an empty argv.)
-if (import.meta.url === `file://${process.argv[1]}`) {
+// ---- CLI ---- (guarded so this module can be imported for its exports —
+// e.g. by tests — without running main(). isCliInvocation, not a naive
+// URL-string comparison: see its doc comment in validate.mjs for the four
+// ways the naive form silently failed open.)
+if (isCliInvocation(import.meta.url)) {
   main();
 }

@@ -17,11 +17,176 @@
 //   - D6 id↔content-hash agreement (verify_ids)
 //   - A1 docHash agreement (recomputed over pre-marker bytes)
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 
-const MARKER_HEAD = '<!-- semantic-zoom:payload:v1';
-const MARKER_TAIL = '-->';
+// Exported as the single JS source of the marker sentinels — assemble.mjs
+// imports these rather than declaring its own copies, so a marker-format
+// change (v2) has exactly one JS site to update. (Rust hardcodes its own
+// copy by design — the two sides are deliberate mirrors of the contract in
+// docs/prompts/payload-format.md.)
+export const MARKER_HEAD = '<!-- semantic-zoom:payload:v1';
+export const MARKER_TAIL = '-->';
+
+/**
+ * True when this module is the file node was asked to run (CLI), false when
+ * imported. The naive `import.meta.url === 'file://' + process.argv[1]`
+ * comparison used previously is wrong in four separate ways: argv[1] may be
+ * relative (`node validate.mjs x.md`), may contain characters that
+ * percent-encode in URLs (spaces, non-ASCII), may reach the script through a
+ * symlink (node resolves the main module's realpath; even /tmp vs
+ * /private/tmp on macOS broke it), and never matches on Windows drive paths.
+ * In every one of those cases the guard silently evaluates false and the
+ * script exits 0 HAVING DONE NOTHING — the caller reads that as success.
+ * realpath + pathToFileURL handles all four.
+ */
+export function isCliInvocation(importMetaUrl) {
+  if (!process.argv[1]) return false;
+  try {
+    return importMetaUrl === pathToFileURL(realpathSync(process.argv[1])).href;
+  } catch {
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared payload-detection primitives. These live HERE (the dependency-free
+// base of the plugin's import graph) so segment.mjs and assemble.mjs can both
+// use them without a cycle (assemble imports segment, so nothing here may
+// import either). validate() below deliberately does NOT use
+// findExistingPayload: its job is to mirror what the app reports for a file
+// (a marker-shaped-but-broken block is Corrupt, not absent), whereas these
+// primitives answer the authoring-side question "is there a genuine payload
+// here to strip before re-deriving?".
+// ---------------------------------------------------------------------------
+
+/**
+ * The LookupTable's required top-level keys, per the JSON Schema in
+ * docs/prompts/payload-format.md and the Rust struct's typed deserialize.
+ * Hand-copied deliberately: the plugin must stay standalone-installable
+ * (CLAUDE_PLUGIN_ROOT can live outside this repo), so it can't reach into
+ * src/engine/payload.schema.json at runtime — tests/schema-drift.test.mjs
+ * pins the two lists together whenever the repo copy is present instead.
+ */
+export const REQUIRED_TOP_LEVEL_KEYS = ['version', 'docHash', 'meta', 'sections', 'paragraphs', 'order'];
+
+/**
+ * Shape gate for "is this parsed JSON actually a LookupTable": mirrors the
+ * Rust extractor's typed `serde_json::from_str::<LookupTable>`, which
+ * rejects wrong-shaped JSON as surely as non-JSON. Without this, a prose
+ * document quoting a small valid-JSON example of the payload would be
+ * mistaken for a real payload (a bare JSON.parse check let exactly that
+ * through).
+ */
+export function looksLikeLookupTable(value) {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    REQUIRED_TOP_LEVEL_KEYS.every((key) => key in value)
+  );
+}
+
+/**
+ * Locate an EXISTING, genuine payload: returns { head, end } (end = index
+ * just past the closing tail) or null.
+ *
+ * Why this is more than a `lastIndexOf(MARKER_HEAD)`: prose that merely
+ * DESCRIBES the marker syntax contains the marker text with no payload
+ * anywhere (a real incident while tagging docs/semantic-zoom-tools.md —
+ * the doc's own opening sentence got matched and everything after it was
+ * truncated as "the old payload"). So a candidate only counts if its
+ * content parses as JSON AND has the LookupTable shape, mirroring the
+ * Rust extractor's typed deserialize.
+ *
+ * Two deliberate details:
+ * - The tail is the FIRST `-->` after the head, not the file's last: A3
+ *   escaping guarantees a payload this tool wrote contains no literal
+ *   `-->`, so the first one after the head IS the payload's own closer.
+ *   Scanning for the LAST tail let any stray `-->` in content after the
+ *   payload corrupt the candidate slice and un-detect a tagged file.
+ * - Heads are scanned backward (last first), so marker text quoted in
+ *   prose BEFORE a real payload never shadows it, and a quoted example
+ *   that doesn't parse simply falls through to the next candidate.
+ *
+ * No un-escape before JSON.parse: the A3-escaped sequence in the file
+ * bytes is already a legal JSON string escape, which JSON.parse resolves
+ * natively.
+ */
+export function findExistingPayload(rawFull) {
+  let searchEnd = rawFull.length;
+  while (searchEnd > 0) {
+    const head = rawFull.lastIndexOf(MARKER_HEAD, searchEnd - 1);
+    if (head === -1) return null;
+    const jsonStart = head + MARKER_HEAD.length;
+    const tail = rawFull.indexOf(MARKER_TAIL, jsonStart);
+    if (tail !== -1) {
+      let parsed;
+      try {
+        parsed = JSON.parse(rawFull.slice(jsonStart, tail).trim());
+      } catch {
+        parsed = undefined;
+      }
+      if (parsed !== undefined && looksLikeLookupTable(parsed)) {
+        return { head, end: tail + MARKER_TAIL.length };
+      }
+    }
+    searchEnd = head;
+  }
+  return null;
+}
+
+/**
+ * Strip every genuine payload from `raw`, PRESERVING any content that sits
+ * after one: text appended after the (invisible) payload comment is the
+ * natural way a file grows at EOF, and a bare `slice(0, head)` silently
+ * deleted it. Spliced content is joined with a blank line so it becomes
+ * ordinary trailing blocks of the body. Loops in case earlier tool
+ * versions ever accreted multiple payloads.
+ *
+ * This is THE definition of the pre-payload source both CLIs must agree
+ * on: segment.mjs segments exactly this text, and assemble.mjs re-derives
+ * spans against exactly this text — any divergence between the two would
+ * make step-1 ids unresolvable in step 3.
+ */
+export function stripPayloads(raw) {
+  let text = raw;
+  for (let found = findExistingPayload(text); found; found = findExistingPayload(text)) {
+    const pre = text.slice(0, found.head).replace(/\s+$/, '');
+    const trailing = text.slice(found.end).trim();
+    text = trailing ? `${pre}\n\n${trailing}` : pre;
+  }
+  return text;
+}
+
+/**
+ * True when marker-LIKE text sits at EOF (nothing but whitespace after it)
+ * without being a genuine payload — almost certainly a DAMAGED payload
+ * (truncated JSON, mangled merge). Callers should refuse loudly rather
+ * than silently treat the garbage as document content (which would lock it
+ * into the file as prose while the app shows the file as Corrupt). Marker
+ * text quoted mid-document has real content after it and returns false.
+ * Call on ALREADY-STRIPPED text (stripPayloads) so a genuine payload
+ * doesn't mask damaged residue.
+ */
+export function hasDamagedEofMarker(text) {
+  const lastHead = text.lastIndexOf(MARKER_HEAD);
+  if (lastHead === -1) return false;
+  const lastTail = text.lastIndexOf(MARKER_TAIL);
+  const blockEnd = lastTail > lastHead ? lastTail + MARKER_TAIL.length : text.length;
+  return text.slice(blockEnd).trim() === '';
+}
+
+/**
+ * The canonical pre-payload source both segment.mjs (CLI) and assemble.mjs
+ * derive ids/spans from: genuine payloads stripped, trailing whitespace
+ * normalized (so repeated assembly converges byte-identically instead of
+ * accumulating padding).
+ */
+export function prePayloadSource(raw) {
+  return stripPayloads(raw).replace(/\s+$/, '');
+}
 
 function sha256(buf) {
   return createHash('sha256').update(buf).digest('hex');
@@ -137,7 +302,7 @@ export function validate(raw) {
 }
 
 // ---- CLI ----
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isCliInvocation(import.meta.url)) {
   const path = process.argv[2];
   if (!path) {
     console.error('usage: node validate.mjs <file.md>');
