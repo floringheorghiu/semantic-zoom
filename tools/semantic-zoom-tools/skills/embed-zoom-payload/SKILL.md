@@ -44,7 +44,7 @@ Hard constraints the assembler enforces (it will reject the file, with a specifi
 ```
 node "${CLAUDE_PLUGIN_ROOT}/scripts/assemble.mjs" <file.md> layers.json
 ```
-Re-derives the whole payload from `<file.md>`'s pre-payload content + `layers.json` every run — safe to re-run after editing either input, including on a file that already has a payload (it strips the old one first). Computes `docHash` over the exact bytes that will precede the marker (A1), escapes any literal `-->` in the JSON (A3), and self-checks every ID against its own span before writing (mirrors the Rust `verify_ids()` the app runs). If it exits non-zero, the error names the exact block/section at fault — fix `layers.json`, don't touch the output file.
+Re-derives the whole payload from `<file.md>`'s pre-payload content + `layers.json` every run — safe to re-run after editing either input, including on a file that already has a **valid** payload (it strips the old one first, and any content that was appended after the old payload is preserved as trailing body content, not deleted). If the existing payload is **damaged** (truncated JSON, mangled merge), it refuses loudly with recovery instructions instead of guessing — delete the broken block per the error message and re-run. Computes `docHash` over the exact bytes that will precede the marker (A1), escapes any literal `-->` in the JSON (A3) plus any quoted marker-head text inside string values, and self-checks every ID against its own span before writing (mirrors the Rust `verify_ids()` the app runs). If it exits non-zero, the error names the exact block/section at fault — fix `layers.json` (or follow the error's recovery instructions), don't touch the output file.
 
 **4. Verify (JS mirror — fast, runs everywhere).**
 ```
@@ -62,8 +62,8 @@ Only consider the task done once **both** step 4 and step 5 pass.
 
 ## Refreshing an existing payload
 
-If the source content changed (new paragraphs, edited prose) and the file already has a payload: re-run step 1 to get fresh IDs, diff `layers.json`'s old ID references against the new segments.json (edited paragraphs get new IDs — their old section slot needs the new ID), then re-run steps 3–4. Do not try to patch the embedded JSON in place.
+If the source content changed (new paragraphs, edited prose) and the file already has a payload: re-run step 1 to get fresh IDs (`segment.mjs` strips the existing payload itself before segmenting, using the same normalization `assemble.mjs` applies — so step-1 ids always resolve in step 3, including content that was appended after the old payload), diff `layers.json`'s old ID references against the new segments.json (edited paragraphs get new IDs — their old section slot needs the new ID), then re-run steps 3–5. Do not try to patch the embedded JSON in place.
 
 ## If validation fails on a file you didn't just build
 
-That means something wrote to this file without going through this pipeline — most often a hand-edit. Do not try to reconcile the drift by hand. Regenerate: re-run step 1 against the current content, rebuild `layers.json` from scratch against the fresh IDs, re-run steps 3–4.
+That means something wrote to this file without going through this pipeline — most often a hand-edit. Do not try to reconcile the drift by hand. Regenerate: re-run step 1 against the current content, rebuild `layers.json` from scratch against the fresh IDs, re-run steps 3–5. If the existing payload block is so damaged it no longer parses, `segment.mjs`/`assemble.mjs` will refuse with instructions to delete the broken block first — follow them, then regenerate.
