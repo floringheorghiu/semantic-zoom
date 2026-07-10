@@ -1,0 +1,14 @@
+{
+  "name": "semantic-zoom-marketplace",
+  "description": "Local marketplace for this repo's own Claude Code plugins.",
+  "owner": {
+    "name": "Florin"
+  },
+  "plugins": [
+    {
+      "name": "semantic-zoom-tools",
+      "source": "./tools/semantic-zoom-tools",
+      "description": "Generate Semantic Zoom .md fixtures/content with an embedded LookupTable payload — deterministic content-addressed IDs, validated referential integrity, D6/A1-A4 contract compliance."
+    }
+  ]
+}
