@@ -50,6 +50,40 @@ function fail(msg) {
   process.exit(1);
 }
 
+/**
+ * Locate an EXISTING, well-formed payload marker's start, or -1 if none
+ * exists. Deliberately more than a bare `lastIndexOf(MARKER_HEAD)`: prose
+ * that merely DESCRIBES the marker syntax — a document about this very
+ * payload format, for instance — can contain the literal marker text, even
+ * a complete self-contained `<!-- ... -->` snippet as an illustrative
+ * example, with no real payload existing anywhere. Confirmed as a real
+ * failure mode while tagging docs/semantic-zoom-tools.md: its own opening
+ * sentence, describing the marker syntax, was the ONLY occurrence of that
+ * text in the file — lastIndexOf alone still misidentified it as an
+ * existing payload to strip, truncating the rest of the document.
+ *
+ * The app's own Rust extractor only accepts a marker whose content actually
+ * parses as JSON (a marker-shaped region that doesn't parse becomes
+ * `LoadResult::Corrupt`, never silently misinterpreted). This mirrors that
+ * discipline: require the candidate region to parse before trusting it's a
+ * real payload, so assemble.mjs never truncates real content sitting in
+ * front of what turns out to be prose.
+ */
+function findExistingMarkerStart(rawFull) {
+  const head = rawFull.lastIndexOf(MARKER_HEAD);
+  if (head === -1) return -1;
+  const jsonStart = head + MARKER_HEAD.length;
+  const tail = rawFull.lastIndexOf(MARKER_TAIL);
+  if (tail === -1 || tail < jsonStart) return -1;
+  const candidate = rawFull.slice(jsonStart, tail).trim().split('--\\u003e').join('-->');
+  try {
+    JSON.parse(candidate);
+  } catch {
+    return -1; // marker-shaped text that isn't actually a payload — treat as absent
+  }
+  return head;
+}
+
 function main() {
   const [, , mdPath, layersPath] = process.argv;
   if (!mdPath || !layersPath) fail('usage: node assemble.mjs <file.md> <layers.json>');
@@ -58,7 +92,7 @@ function main() {
   // Always segment the PRE-PAYLOAD region, even on re-runs against an
   // already-embedded file — this is what makes the script idempotent
   // instead of accreting stale payloads.
-  const markerAt = rawFull.indexOf(MARKER_HEAD);
+  const markerAt = findExistingMarkerStart(rawFull);
   // Strip any existing marker AND the padding this script itself inserts
   // before it, so re-running on an already-embedded file converges to a
   // fixed point instead of accumulating a blank line per run (each run's
@@ -171,9 +205,11 @@ function main() {
   // ---- A1: docHash over the EXACT bytes that will precede the marker in
   // the WRITTEN file, not the pre-normalization source. A naive
   // `sha256(raw)` disagrees with a reader that hashes
-  // `finalFile.slice(0, finalFile.indexOf(MARKER_HEAD))`, because that
-  // slice includes whatever newline padding this script inserts before
-  // the marker. Build the exact prefix first, hash that, embed after. ----
+  // `finalFile.slice(0, finalFile.lastIndexOf(MARKER_HEAD))` (rfind, per
+  // the app's real extractor — see the lastIndexOf note near the top of
+  // this file), because that slice includes whatever newline padding this
+  // script inserts before the marker. Build the exact prefix first, hash
+  // that, embed after. ----
   const prefix = raw + (raw.endsWith('\n') ? '' : '\n') + '\n';
   const docHash = sha256(Buffer.from(prefix, 'utf8'));
 
