@@ -18,9 +18,13 @@ Two ways to load it:
 - **Per-session, quick:** `claude --plugin-dir tools/semantic-zoom-tools`
   (from the repo root). Works immediately, only for that session.
 - **Persistent, via the local marketplace at the repo root
-  (`marketplace.json`):**
+  (`.claude-plugin/marketplace.json` — same `.claude-plugin/` convention a
+  plugin itself uses; `claude plugin install` resolves each plugin's
+  `source` relative to that directory's PARENT, so the manifest can't sit
+  at the repo root directly — confirmed by hitting exactly that failure
+  once):**
   ```
-  claude plugin marketplace add ./marketplace.json
+  claude plugin marketplace add ./.claude-plugin/marketplace.json
   claude plugin install semantic-zoom-tools
   ```
   Registers it so `/reload-plugins` and future sessions pick it up
