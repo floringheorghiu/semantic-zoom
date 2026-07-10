@@ -1,0 +1,13 @@
+{
+  "meta": [
+    { "title": "What this doc demonstrates", "body": "A tiny sample exercising headings, duplicate code blocks, a table, a list, and a thematic break.", "sections": ["intro", "wrap"] }
+  ],
+  "sections": [
+    { "key": "intro", "title": "Setting the scene",
+      "body": "Introduces the file and starts the first section's example.",
+      "paragraphs": ["P-848125f6-0", "P-ef49ebf9-0", "P-405a3eb6-0", "P-cc445478-0", "P-b0e27e5e-0"] },
+    { "key": "wrap", "title": "The rest of the file",
+      "body": "Second section, its duplicate code block, the table, list, and closing paragraph.",
+      "paragraphs": ["P-280ead89-0", "P-5c55a3bd-0", "P-b0e27e5e-1", "P-189d17e7-0", "P-cb52a55b-0", "P-93a46ee4-0"] }
+  ]
+}
