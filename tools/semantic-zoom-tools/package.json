@@ -2,6 +2,9 @@
   "name": "semantic-zoom-tools-scripts",
   "private": true,
   "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
   "dependencies": {
     "unified": "^11.0.5",
     "remark-parse": "^11.0.0",
