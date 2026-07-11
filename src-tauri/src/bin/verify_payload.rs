@@ -24,8 +24,6 @@ use std::env;
 use std::fs;
 use std::process::ExitCode;
 
-const HEAD: &str = "<!-- semantic-zoom:payload:v1";
-
 fn main() -> ExitCode {
     let path = match env::args().nth(1) {
         Some(p) => p,
@@ -43,20 +41,23 @@ fn main() -> ExitCode {
         }
     };
 
-    let Some(marker_start) = source.rfind(HEAD) else {
-        eprintln!("verify_payload: {path} has no semantic-zoom payload marker");
-        return ExitCode::FAILURE;
-    };
-    let pre_payload = &source[..marker_start];
-
-    let table = match extract_payload(&source) {
-        None => unreachable!("marker presence already checked above"),
+    // extract_payload() itself determines marker presence — including
+    // telling a genuine payload apart from prose that merely quotes the
+    // marker syntax (e.g. this plugin's own skill docs) — so a separate
+    // rfind(HEAD) here would disagree with it and can't be used as a proxy
+    // for "extract_payload will return Some".
+    let (head, table) = match extract_payload(&source) {
+        None => {
+            eprintln!("verify_payload: {path} has no semantic-zoom payload marker");
+            return ExitCode::FAILURE;
+        }
         Some(Err(e)) => {
             eprintln!("verify_payload: {path}: parse/validate() failed: {e}");
             return ExitCode::FAILURE;
         }
-        Some(Ok(t)) => t,
+        Some(Ok((head, t))) => (head, t),
     };
+    let pre_payload = &source[..head];
 
     if let Err(e) = table.verify_ids(pre_payload) {
         eprintln!("verify_payload: {path}: verify_ids() failed: {e}");
