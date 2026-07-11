@@ -17,7 +17,6 @@ use std::time::Instant;
 
 use semantic_zoom_lib::parser::payload::extract_payload;
 
-const HEAD: &str = "<!-- semantic-zoom:payload:v1";
 const ITERS: usize = 20;
 const BUDGET_MS: f64 = 10.0;
 
@@ -41,29 +40,27 @@ fn perf_extract_1mb_within_budget() {
         }
     };
 
-    // Pre-payload region (A1/A2): everything before the marker. `verify_ids`
-    // recomputes each paragraph hash from its span slice of this region.
-    let marker_start = source
-        .rfind(HEAD)
-        .expect("synthetic doc must contain a payload marker");
-    let pre_payload = &source[..marker_start];
-
-    // Sanity: the pipeline must accept the generated payload before we time it.
-    // (If this fails, fix the generator — never the Rust.)
-    {
-        let table = extract_payload(&source)
+    // Pre-payload region (A1/A2): everything before the marker, at the
+    // offset extract_payload() itself found it — `verify_ids` recomputes
+    // each paragraph hash from its span slice of this region. Sanity: the
+    // pipeline must accept the generated payload before we time it. (If
+    // this fails, fix the generator — never the Rust.)
+    let pre_payload_len = {
+        let (head, table) = extract_payload(&source)
             .expect("payload marker present")
             .expect("payload parses + validates");
         table
-            .verify_ids(pre_payload)
+            .verify_ids(&source[..head])
             .expect("D6 ids verify against the pre-payload region");
-    }
+        head
+    };
+    let pre_payload = &source[..pre_payload_len];
 
     // Time extract_payload (parse + validate) + verify_ids over N iterations.
     let mut samples_ms: Vec<f64> = Vec::with_capacity(ITERS);
     for _ in 0..ITERS {
         let t0 = Instant::now();
-        let table = extract_payload(&source)
+        let (_, table) = extract_payload(&source)
             .expect("some")
             .expect("ok");
         table.verify_ids(pre_payload).expect("verify");

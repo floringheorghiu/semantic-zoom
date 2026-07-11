@@ -40,6 +40,12 @@ Hard constraints the assembler enforces (it will reject the file, with a specifi
 - **Level -2 (meta) body:** plain-language "what was accomplished / prerequisites or blockers / next step" — the narrative arc, not a table of contents.
 - Titles are short and human ("How the view knows where to land"), not restated headings.
 
+**2.5. Self-check `layers.json` before assembling.**
+```
+node "${CLAUDE_PLUGIN_ROOT}/scripts/check-layers.mjs" layers.json
+```
+Zero-dependency structural check: every section key assigned to exactly one meta node, no unknown keys, no duplicates, no section left with an empty paragraph list. `assemble.mjs` enforces the same constraints and will refuse a bad file regardless — this step exists to catch an incomplete `layers.json` (e.g. a section drafted but never added to any meta node's `sections` array) one step earlier, before the parser/hash work in step 3 runs. Fix `layers.json` and re-run until this prints `OK`.
+
 **3. Assemble.**
 ```
 node "${CLAUDE_PLUGIN_ROOT}/scripts/assemble.mjs" <file.md> layers.json

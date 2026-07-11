@@ -13,8 +13,6 @@ use std::path::PathBuf;
 
 use semantic_zoom_lib::parser::payload::extract_payload;
 
-const HEAD: &str = "<!-- semantic-zoom:payload:v1";
-
 fn stress_fixture_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../perf/stress-fixture.md")
 }
@@ -34,14 +32,10 @@ fn stress_fixture_parses_validates_and_verifies() {
         }
     };
 
-    let marker_start = source
-        .rfind(HEAD)
-        .expect("stress fixture must contain a payload marker");
-    let pre_payload = &source[..marker_start];
-
-    let table = extract_payload(&source)
+    let (head, table) = extract_payload(&source)
         .expect("payload marker present")
         .expect("payload parses + validates");
+    let pre_payload = &source[..head];
     table
         .verify_ids(pre_payload)
         .expect("D6 ids verify against the pre-payload region");
