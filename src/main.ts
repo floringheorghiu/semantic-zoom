@@ -809,6 +809,15 @@ async function installMenu(): Promise<void> {
 
   const menu = await Menu.new({ items: [appMenu, fileMenu, editMenu, viewMenu, windowMenu] });
   await menu.setAsAppMenu();
+
+  // Register the Window submenu as NSApp.windowsMenu. Without this, AppKit
+  // treats it as an ordinary submenu and never injects the native window-
+  // management items (Move & Resize halves/quarters, Fill, Center, the
+  // open-window list). The system window-tiling keyboard shortcuts are
+  // accelerators on those injected items, so they silently no-op app-wide
+  // until the submenu is registered — mouse tiling via the green-button
+  // hover grid works either way, which is what made this hard to spot.
+  await windowMenu.setAsWindowsMenuForNSApp();
 }
 
 function inEditable(t: EventTarget | null): boolean {
