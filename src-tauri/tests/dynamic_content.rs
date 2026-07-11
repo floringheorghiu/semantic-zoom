@@ -41,12 +41,10 @@ fn build_native_doc(meta_title: &str, section_heading: &str, paragraph_text: &st
 /// The exact parse path `load_document` runs on whatever file it's asked to
 /// read: extract, then verify ids against the pre-payload bytes.
 fn load(raw: &str) -> LookupTable {
-    let head = "<!-- semantic-zoom:payload:v1";
-    let table = extract_payload(raw)
+    let (head, table) = extract_payload(raw)
         .expect("payload present")
         .expect("payload valid JSON + referentially sound");
-    let pre = &raw[..raw.rfind(head).unwrap()];
-    table.verify_ids(pre).expect("ids verify against the real bytes");
+    table.verify_ids(&raw[..head]).expect("ids verify against the real bytes");
     table
 }
 

@@ -198,38 +198,38 @@ function sha256(buf) {
 // events; sidestepping the problem beats defending against it twice).
 // Returns { ok: true, noMarker?: true } or { ok: false, errors: string[] }.
 export function validate(raw) {
-  // lastIndexOf, not indexOf: the app's Rust extractor locates the head
-  // with `rfind` too, not just the tail below — the real payload lives at
-  // EOF. A forward indexOf here matches the first occurrence of the marker
-  // TEXT anywhere in the file, which is a real failure mode for a document
-  // that describes the marker syntax in its own prose (this file's sibling
-  // assemble.mjs hit exactly this while tagging docs/semantic-zoom-tools.md
-  // — its own explanatory sentence mentioning the marker got matched as if
-  // it were a real payload).
-  const head = raw.lastIndexOf(MARKER_HEAD);
-  if (head === -1) return { ok: true, noMarker: true };
+  // Use the same backward-scan + shape-check as findExistingPayload(),
+  // not a bare lastIndexOf/lastIndexOf pair: a single "last head, last
+  // tail" scan treats ANY prose that merely quotes the marker syntax (e.g.
+  // this plugin's own skill docs, or docs/prompts/payload-format.md) as a
+  // corrupt payload, because the marker text itself matches HEAD with no
+  // real JSON following it. Scanning candidates backward and requiring a
+  // shape match before accepting one lets such prose fall through to
+  // "no marker" instead of "corrupt marker" — this exact gap shipped once
+  // (this function mirrored the naive form even after findExistingPayload
+  // was hardened) and misclassified this skill's own SKILL.md as corrupt.
+  const found = findExistingPayload(raw);
+  let head, tail, table;
 
-  const jsonStart = head + MARKER_HEAD.length;
-  // rfind, not find (A3): a producer that failed to escape an internal
-  // "-->" would otherwise truncate here silently. Matching the last
-  // occurrence is what the Rust extractor does per the plan's hardening.
-  const tail = raw.lastIndexOf(MARKER_TAIL);
-  if (tail === -1 || tail < jsonStart) {
-    return { ok: false, errors: ['malformed marker: no closing "-->" found after payload head'] };
+  if (found) {
+    ({ head } = found);
+    const jsonStart = head + MARKER_HEAD.length;
+    tail = raw.indexOf(MARKER_TAIL, jsonStart); // first "-->" after head — see findExistingPayload's doc comment (A3)
+    let jsonText = raw.slice(jsonStart, tail).trim();
+    jsonText = jsonText.split('--\\u003e').join('-->'); // reverse A3 escaping
+    table = JSON.parse(jsonText); // guaranteed to parse: findExistingPayload already confirmed this
+  } else if (hasDamagedEofMarker(raw)) {
+    return {
+      ok: false,
+      errors: ['marker-like text at end of file did not parse as a valid payload ' +
+        '(truncated JSON or corrupted merge)'],
+    };
+  } else {
+    return { ok: true, noMarker: true };
   }
 
   const preMarker = raw.slice(0, head);
   const preMarkerBytes = Buffer.from(preMarker, 'utf8');
-
-  let jsonText = raw.slice(jsonStart, tail).trim();
-  jsonText = jsonText.split('--\\u003e').join('-->'); // reverse A3 escaping
-
-  let table;
-  try {
-    table = JSON.parse(jsonText);
-  } catch (e) {
-    return { ok: false, errors: [`payload is not valid JSON: ${e.message}`] };
-  }
 
   const errors = [];
 

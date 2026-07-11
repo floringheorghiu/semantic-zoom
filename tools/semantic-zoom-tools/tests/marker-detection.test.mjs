@@ -19,7 +19,7 @@ import assert from 'node:assert/strict';
 // Imported from validate.mjs — the dependency-free base module where the
 // shared detection primitives live (so these tests also run without the
 // segment/assemble dependency chain, i.e. before npm install).
-import { findExistingPayload, looksLikeLookupTable } from '../scripts/validate.mjs';
+import { findExistingPayload, looksLikeLookupTable, validate } from '../scripts/validate.mjs';
 
 const REAL_TABLE = {
   version: 1,
@@ -29,6 +29,31 @@ const REAL_TABLE = {
   paragraphs: {},
   order: { meta: [], sections: [], paragraphs: [] },
 };
+
+test('validate() reports "no marker" for a document with NO real payload at all, not just findExistingPayload() — regression for the tagging skill\'s own SKILL.md misclassified as corrupt', () => {
+  // findExistingPayload() already had this fix; validate() — a separate
+  // function with its own (formerly naive) lastIndexOf/lastIndexOf scan —
+  // did not, and shipped the exact bug it describes above: it flagged this
+  // plugin's own embed-zoom-payload/SKILL.md as a corrupt payload because
+  // its instructions quote the marker syntax in prose. Unlike the
+  // assemble-integration "bug #3" test, there is no real payload anywhere
+  // in this document — the earlier fix only covered prose BEFORE a real
+  // payload, not prose with no payload at all.
+  const source =
+    'Produces a markdown file with a valid `<!-- semantic-zoom:payload:v1 ... -->` ' +
+    'block per the format spec.\n\n' +
+    'This document never actually embeds one — it only explains the format.\n';
+  const result = validate(source);
+  assert.equal(result.ok, true);
+  assert.equal(result.noMarker, true);
+});
+
+test('validate() still reports a genuinely truncated/corrupted payload at EOF as invalid', () => {
+  const source = 'text\n<!-- semantic-zoom:payload:v1\n{ not json }\n-->';
+  const result = validate(source);
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.length > 0);
+});
 
 test('prose that quotes the marker as a non-JSON illustrative example is not mistaken for a payload', () => {
   const source =
