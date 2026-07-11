@@ -20,10 +20,11 @@ pub fn load_document(path: String) -> Result<LoadResult, String> {
     match extract_payload(&raw) {
         None => Ok(LoadResult::Untagged { raw }),
         Some(Err(error)) => Ok(LoadResult::Corrupt { raw, error }),
-        Some(Ok(table)) => {
-            // A1/A2: verify against the pre-payload region only.
-            let head = "<!-- semantic-zoom:payload:v1";
-            let pre = &raw[..raw.rfind(head).unwrap()];
+        Some(Ok((head, table))) => {
+            // A1/A2: verify against the pre-payload region only. `head` is
+            // the offset extract_payload() itself found the genuine payload
+            // at — not re-derived here — so this can't disagree with it.
+            let pre = &raw[..head];
             match table.verify_ids(pre) {
                 Ok(()) => Ok(LoadResult::Native { table, raw }),
                 Err(error) => Ok(LoadResult::Corrupt { raw, error }),
