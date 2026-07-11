@@ -16,6 +16,16 @@
 // toolkit's dependency-free-script convention rather than adding a Python
 // dependency to a Node plugin.
 //
+// Customizing META_GROUPS/classify() is NOT the whole job. Every section
+// this script emits has body: "" — a placeholder, not a summary. You still
+// have to go back and write a real, jargon-free body for each section
+// afterward (the exact thing the skill's step 2 describes as the genuinely
+// creative task no script should attempt). Nothing downstream catches a
+// forgotten one: an empty string is structurally valid, so
+// check-layers.mjs, assemble.mjs, and validate.mjs all pass it silently.
+// This script warns about it below, to stderr, but that warning is
+// advisory — it does not block writing layers.json to stdout.
+//
 // Section splitting: every `##` heading starts a new section, running
 // until the next `##` heading (so `###`+ subheadings and their content
 // stay inside the enclosing `##` section — coarser than hand-grouping by
@@ -164,6 +174,25 @@ function main() {
         gaps++;
       }
     }
+  }
+
+  // Every section starts with body: "" (see the `current = {...}` literal
+  // above) — that's a placeholder, not a valid summary. Nothing downstream
+  // catches this: an empty string is structurally valid JSON, so
+  // check-layers.mjs, assemble.mjs, and validate.mjs all accept it
+  // silently. A real payload shipped once with 44 of 45 section bodies
+  // still empty — the auto-generated META_GROUPS/classify() customization
+  // got done, the per-section body-writing pass never did — and every
+  // mechanical check passed anyway. Warn loudly here, where it's still
+  // cheap to notice.
+  const emptyBodies = layers.sections.filter((s) => !s.body || !s.body.trim());
+  if (emptyBodies.length) {
+    console.error(
+      `WARNING: ${emptyBodies.length}/${layers.sections.length} section(s) still have an ` +
+      `empty body — this script only groups blocks, it does NOT write summaries. ` +
+      `Write a real body for each section before running assemble.mjs:`
+    );
+    for (const s of emptyBodies) console.error(`  - ${s.key}: "${s.title}"`);
   }
 
   console.error(`Sections: ${layers.sections.length}, Meta: ${layers.meta.length}`);
