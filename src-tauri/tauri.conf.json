@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "semantic-zoom",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "identifier": "com.floringheorghiu.semantic-zoom",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -18,7 +18,10 @@
         "height": 760,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
-        "transparent": false
+        "transparent": false,
+        "resizable": true,
+        "maximizable": true,
+        "minimizable": true
       }
     ],
     "security": {
