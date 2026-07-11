@@ -12,11 +12,15 @@ Produces a markdown file with a valid `<!-- semantic-zoom:payload:v1 ... -->` bl
 
 Target file: `$ARGUMENTS` if given, otherwise ask which file (don't guess between multiple candidates).
 
-**0. One-time setup.** If `${CLAUDE_PLUGIN_ROOT}/node_modules` doesn't exist, run `npm install` inside `${CLAUDE_PLUGIN_ROOT}` before continuing. `validate.mjs` and `hook-validate.mjs` have zero dependencies and always work; only `segment.mjs`/`assemble.mjs` need this.
+**PLUGIN_ROOT.** All commands below reference `<PLUGIN_ROOT>` — the plugin's own directory. Resolve it once, in this order:
+1. If the environment variable `CLAUDE_PLUGIN_ROOT` is set (Claude Code plugin install), use its value.
+2. Otherwise (any other harness — MiMo Code, Pi, a bare checkout), use the path relative to the repository root: `tools/semantic-zoom-tools`. This plugin is developed in-repo alongside the app it validates against (step 5 shells out to `src-tauri/` two directories up from here), so the repo-relative path is always correct when running from a checkout of this repository.
+
+**0. One-time setup.** If `<PLUGIN_ROOT>/node_modules` doesn't exist, run `npm install` inside `<PLUGIN_ROOT>` before continuing. `validate.mjs` and `hook-validate.mjs` have zero dependencies and always work; only `segment.mjs`/`assemble.mjs` need this.
 
 **1. Segment.**
 ```
-node "${CLAUDE_PLUGIN_ROOT}/scripts/segment.mjs" <file.md> > /tmp/segments.json
+node "<PLUGIN_ROOT>/scripts/segment.mjs" <file.md> > /tmp/segments.json
 ```
 This parses with `unified` + `remark-parse` + `unist-util-visit` — the same parser family the app's own Engine B specifies (plan §2.7) — and assigns every block a content-addressed ID: `P-<sha256(text)[:8]>-<ordinal>` (D6). Read `/tmp/segments.json` to see every block's id, kind, and text.
 
@@ -42,19 +46,19 @@ Hard constraints the assembler enforces (it will reject the file, with a specifi
 
 **3. Assemble.**
 ```
-node "${CLAUDE_PLUGIN_ROOT}/scripts/assemble.mjs" <file.md> layers.json
+node "<PLUGIN_ROOT>/scripts/assemble.mjs" <file.md> layers.json
 ```
 Re-derives the whole payload from `<file.md>`'s pre-payload content + `layers.json` every run — safe to re-run after editing either input, including on a file that already has a **valid** payload (it strips the old one first, and any content that was appended after the old payload is preserved as trailing body content, not deleted). If the existing payload is **damaged** (truncated JSON, mangled merge), it refuses loudly with recovery instructions instead of guessing — delete the broken block per the error message and re-run. Computes `docHash` over the exact bytes that will precede the marker (A1), escapes any literal `-->` in the JSON (A3) plus any quoted marker-head text inside string values, and self-checks every ID against its own span before writing (mirrors the Rust `verify_ids()` the app runs). If it exits non-zero, the error names the exact block/section at fault — fix `layers.json` (or follow the error's recovery instructions), don't touch the output file.
 
 **4. Verify (JS mirror — fast, runs everywhere).**
 ```
-node "${CLAUDE_PLUGIN_ROOT}/scripts/validate.mjs" <file.md>
+node "<PLUGIN_ROOT>/scripts/validate.mjs" <file.md>
 ```
 Independent check, run standalone — this is the same logic the PostToolUse hook runs automatically on every future edit to this file.
 
 **5. Verify against the app's own compiled Rust — the authoritative gate.**
 ```
-cargo run --manifest-path "${CLAUDE_PLUGIN_ROOT}/../../src-tauri/Cargo.toml" --bin verify_payload -- <file.md>
+cargo run --manifest-path "<PLUGIN_ROOT>/../../src-tauri/Cargo.toml" --bin verify_payload -- <file.md>
 ```
 `validate.mjs` above is a faithful JS *reimplementation* of the app's `validate()`/`verify_ids()` — deliberately dependency-free so the PostToolUse hook can run on every edit without needing cargo. A reimplementation can still drift from what it mirrors, silently, in ways a self-consistent JS check wouldn't catch (this happened once during this tool's own development: a UTF-16-vs-UTF-8 offset bug in `segment.mjs` produced garbled paragraph content while still passing every mechanical check, because the id and its hash were both derived from the same wrong byte range — only reading the actual content caught it). This step runs the exact compiled code `load_document` runs, closing that gap. Only skip it if cargo genuinely isn't available; note that explicitly if so, don't silently treat step 4 alone as equivalent to "verified."
 

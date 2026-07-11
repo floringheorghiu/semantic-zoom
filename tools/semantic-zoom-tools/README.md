@@ -30,6 +30,16 @@ Two ways to load it:
   Registers it so `/reload-plugins` and future sessions pick it up
   automatically, without needing `--plugin-dir` every time.
 
+## Running under MiMo Code (or any non-Claude-Code harness)
+
+`SKILL.md` doesn't reference `${CLAUDE_PLUGIN_ROOT}` — it resolves a `<PLUGIN_ROOT>` placeholder itself (see the "PLUGIN_ROOT" line at the top of the Pipeline section): Claude Code's env var if set, otherwise the repo-relative path `tools/semantic-zoom-tools`. That repo-relative fallback is always correct here because this plugin is developed in-repo, not installed as a standalone package elsewhere — step 5 already assumes a fixed `../../src-tauri` relationship to this directory regardless of engine.
+
+MiMo Code (a fork of OpenCode) discovers project skills at `.mimocode/skills/**/SKILL.md`, using the same frontmatter format as Claude Code. `.mimocode/skills/embed-zoom-payload` is a relative symlink to `skills/embed-zoom-payload` in this directory — one source of truth, discoverable from both engines. A `.mimocode/commands/embed-zoom-payload.md` command is also provided for `/embed-zoom-payload <file>` in MiMo's TUI.
+
+**Not ported:** the `PostToolUse` hook (`hooks/hooks.json` → `hook-validate.mjs`) that auto-validates every edit to a payload-bearing `.md` file. MiMo Code's plugin system uses a different mechanism (a JS/TS `file.edited` or `tool.execute.after` hook in `.mimocode/plugins/`, not a hooks.json config) — porting it is possible but wasn't done here since the skill's own steps 4–5 already run the same validation explicitly before declaring the task done; the hook is a convenience safety net for edits made *outside* the skill, not the only check.
+
+**Unverified:** none of the above has been run inside an actual MiMo Code session — it's built from MiMo Code's public docs (symlink-following for skill discovery in particular is assumed, not confirmed). If it doesn't discover the skill, check `.mimocode/skills/embed-zoom-payload/SKILL.md` resolves through the symlink, or fall back to pointing MiMo Code at `tools/semantic-zoom-tools/skills/embed-zoom-payload/SKILL.md` directly.
+
 ## Components
 
 | Path | Role |
