@@ -18,7 +18,10 @@
         "height": 760,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
-        "transparent": false
+        "transparent": false,
+        "resizable": true,
+        "maximizable": true,
+        "minimizable": true
       }
     ],
     "security": {
