@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "settings",
+  "description": "Capability for the Settings window (§8.3) — minimal: no dialog/drag access, it's a plain form.",
+  "windows": ["settings"],
+  "permissions": [
+    "core:default"
+  ]
+}

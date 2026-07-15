@@ -56,10 +56,21 @@ first child, so a different grouping of identical input produces different
 whole document. Every knob here exists to make identical input produce
 identical grouping:
 
-- **temperature 0** (greedy decoding); leave top-p/top-k at defaults.
+- **temperature 0** (greedy decoding) on the FIRST attempt; leave top-p/
+  top-k at defaults. Retries raise it (0.3, then 0.6): a retry only happens
+  because the temp-0 output failed validation, and a temp-0 model re-fed a
+  near-identical prompt reproduces its mistake verbatim — observed live
+  (2026-07-15), three byte-identical failures for triple the GPU time.
+  Grouping determinism of an output that never passes validation protects
+  nothing; a payload that assembles at retry temperature is still fully
+  mechanically verified.
 - **Structured output / JSON mode** if the runtime supports it (Ollama:
   `"format": "json"`); the "Output ONLY the JSON object" instruction is the
-  fallback, not the mechanism.
+  fallback, not the mechanism. Caveat, observed 2026-07-15: some Ollama
+  builds/models (gemma4's renderer_parser path) silently IGNORE both the
+  OpenAI-style `response_format` and native `format: "json"` — the wrapper
+  must therefore never ASSUME grammar-constrained output; the parse-check-
+  retry loop stays load-bearing even with JSON mode requested.
 - Model per D3: quantized **Gemma 3 4B or Qwen3 4B** via Ollama
   (`http://localhost:11434/api/generate`). Record the exact model tag used
   alongside any payload produced during development.
@@ -204,6 +215,18 @@ Expected output:
 ```
 
 ## Output contract (mechanical checks the wrapper must run before assembly)
+
+Normalization first (wrapper-side, before any check): collapse repeats of
+the same id WITHIN one section's `children`, keeping the first occurrence.
+Rationale, from a real deterministic failure (2026-07-15, gemma4 via
+Ollama): a markdown table is a single block to the segmenter — one `P-` id
+— but a model reading its rows emits that id once per row it describes
+(`[P-x, P-y, P-y, P-y, …]`), and at temperature 0 it repeats the identical
+mistake on every retry, so the retry budget can never recover. A repeat
+inside one section is unambiguous about the only thing the model decides
+(which section owns the block); collapsing it loses nothing. A duplicate
+across two different sections is a genuine grouping conflict and is NOT
+normalized — it must still fail the check below.
 
 - Valid JSON, top-level keys exactly `meta` and `sections`.
 - `sections` is a non-empty array; every element has non-empty `children`,

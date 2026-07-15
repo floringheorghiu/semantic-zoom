@@ -14,6 +14,19 @@ export default defineConfig(async () => ({
     __APP_VERSION__: JSON.stringify(version),
   },
 
+  // Two independent HTML entries: the main viewport and the Settings window
+  // (§8.3). settings.html bundles ONLY src/native/settings-form.ts — never
+  // the viewport/store/engine modules — so it structurally cannot leak
+  // secret-handling code into the main bundle or vice versa (D9/D10).
+  build: {
+    rollupOptions: {
+      input: {
+        main: "index.html",
+        settings: "settings.html",
+      },
+    },
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors
