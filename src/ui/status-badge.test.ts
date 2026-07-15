@@ -96,3 +96,45 @@ test('teardown removes the mounted element', () => {
   badge.teardown();
   expect(root.children.length).toBe(0);
 });
+
+test('setStatus("synthesizing") shows a live elapsed ticker (m:ss) that any status change stops', () => {
+  vi.useFakeTimers();
+  const root = document.createElement('div');
+  document.body.appendChild(root);
+  const badge = mountStatusBadge(root);
+  const note = root.querySelector<HTMLElement>('.status-badge__note')!;
+
+  badge.setStatus('synthesizing');
+  expect(note.textContent).toBe('Generating summary… 0:00');
+
+  vi.advanceTimersByTime(65_000);
+  expect(note.textContent).toBe('Generating summary… 1:05');
+
+  // Any status change stops the ticker — the text must never mutate again.
+  badge.setStatus('generationFailed', 'boom');
+  expect(note.textContent).toBe('⚠ Summary generation failed');
+  vi.advanceTimersByTime(10_000);
+  expect(note.textContent).toBe('⚠ Summary generation failed');
+
+  assertNoModal(root);
+  badge.teardown();
+});
+
+test('setStatus("generationFailed", error) shows a persistent warning with the full error on hover', () => {
+  const root = document.createElement('div');
+  document.body.appendChild(root);
+  const badge = mountStatusBadge(root);
+  const note = root.querySelector<HTMLElement>('.status-badge__note')!;
+
+  badge.setStatus('generationFailed', 'synthesis failed after 3 attempts');
+  expect(note.dataset.status).toBe('generation-failed');
+  expect(note.textContent).toContain('generation failed');
+  expect(note.title).toContain('synthesis failed after 3 attempts');
+
+  // Persistent: nothing dismisses it but the next status change.
+  badge.setStatus('untagged');
+  expect(note.dataset.status).toBe('untagged');
+
+  assertNoModal(root);
+  badge.teardown();
+});
