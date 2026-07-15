@@ -1,7 +1,12 @@
 use crate::parser::LookupTable;
 
-const HEAD: &str = "<!-- semantic-zoom:payload:v1";
-const TAIL: &str = "-->";
+// pub(crate): reused by write_payload.rs (T8) so both marker-scanning and
+// marker-writing agree on the exact sentinel bytes within this one Rust
+// codebase — no reason to duplicate the constant twice in the same crate,
+// unlike the deliberate JS/Rust duplication (README: "Rust hardcodes its
+// own copy by design").
+pub(crate) const HEAD: &str = "<!-- semantic-zoom:payload:v1";
+pub(crate) const TAIL: &str = "-->";
 
 /// Locate a genuine payload by scanning HEAD occurrences backward from EOF
 /// and accepting only a candidate whose content actually deserializes into

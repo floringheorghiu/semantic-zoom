@@ -37,6 +37,78 @@
   overflow: clip;
 }
 
+/* Engine B's Generate trigger (D10/§8.5, Figma node 199:494) — same corner
+   slot as #content-map above, on purpose: that slot is empty exactly when
+   this needs to appear (an Untagged doc has no LookupTable, so no map), so
+   the two are mutually exclusive by construction and never fight for space. */
+#generate-affordance {
+  position: absolute;
+  left: 12px;
+  top: 16px;
+  z-index: 3;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+  background: var(--sz-bg);
+  border: 1px solid var(--sz-border);
+  border-radius: 4px;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.1),
+    0 1px 2px -1px rgba(0, 0, 0, 0.1);
+  cursor: pointer;
+}
+
+#generate-affordance svg {
+  width: 22px;
+  height: 22px;
+  display: block;
+}
+
+/* Three-state icon swap (idle / loading / hover-to-stop), driven by
+   data-state + data-frame rather than JS toggling classList per frame. */
+#generate-affordance .ga-icon,
+#generate-affordance .ga-frame {
+  display: none;
+}
+
+#generate-affordance[data-state='idle'] .ga-icon--idle {
+  display: block;
+}
+
+#generate-affordance[data-state='loading'] .ga-icon--loading {
+  display: block;
+}
+
+#generate-affordance[data-state='loading'][data-frame='1'] .ga-frame--1 {
+  display: block;
+}
+
+#generate-affordance[data-state='loading'][data-frame='2'] .ga-frame--2 {
+  display: block;
+}
+
+/* Hovering the loading state reveals Stop instead of the binary animation —
+   a click while loading cancels (generate-affordance.ts's click handler
+   branches on data-state, not on which icon is currently visible). */
+#generate-affordance[data-state='loading']:hover .ga-icon--loading {
+  display: none;
+}
+
+#generate-affordance[data-state='loading']:hover .ga-icon--stop {
+  display: block;
+}
+
+#generate-affordance:hover {
+  background: var(--sz-track);
+}
+
+#generate-affordance[hidden] {
+  display: none;
+}
+
 /* `hidden` must beat the `display: flex` above (no native doc → no map). */
 #content-map[hidden] {
   display: none;

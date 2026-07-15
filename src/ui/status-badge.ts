@@ -3,14 +3,21 @@
 // untagged docs, and a 1.5s auto-dismissing "Updated" pill for hot reloads.
 // NEVER a modal or a diff view. No `@tauri-apps/*` — pure DOM (ui/ boundary).
 
-export type StatusKind = 'native' | 'untagged' | 'corrupt';
+// 'synthesizing' / 'generationFailed' (D10/§8.5): Engine B runs take
+// minutes, so the outcome must be PERSISTENT — a transient pill expires
+// long before the user looks back at the window. Both are cleared by the
+// next setStatus call (success → 'native', next doc → whatever it is).
+export type StatusKind = 'native' | 'untagged' | 'corrupt' | 'synthesizing' | 'generationFailed';
 
 export interface StatusBadgeHandle {
   teardown: () => void;
   /** Persistent, non-modal status. `error` is surfaced for the corrupt kind. */
   setStatus: (status: StatusKind, error?: string) => void;
-  /** Show a 1.5s auto-dismissing pill (the ONLY permitted reload feedback). */
-  flashUpdated: (message?: string) => void;
+  /** Show an auto-dismissing pill (the ONLY permitted reload feedback for
+      hot reload — 1.5s default). `durationMs` lets Engine B's longer
+      start/success/failure/cancel toasts stay legible past the default
+      reload-pill duration, which is too brief to read a full sentence. */
+  flashUpdated: (message?: string, durationMs?: number) => void;
 }
 
 /** How long the "Updated" pill stays before auto-dismissing (spec §5.3). */
@@ -51,6 +58,24 @@ export function mountStatusBadge(root: HTMLElement): StatusBadgeHandle {
 
   let pill: HTMLElement | null = null;
   let pillTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Elapsed-time ticker for the 'synthesizing' state — a generation runs
+      for minutes, and a static "Generating…" gives no sense of progress or
+      of whether the app is even alive. Cleared on ANY status change. */
+  let elapsedTimer: ReturnType<typeof setInterval> | null = null;
+
+  function clearElapsedTimer(): void {
+    if (elapsedTimer !== null) {
+      clearInterval(elapsedTimer);
+      elapsedTimer = null;
+    }
+  }
+
+  function formatElapsed(startMs: number): string {
+    const total = Math.floor((Date.now() - startMs) / 1000);
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  }
 
   function clearPillTimer(): void {
     if (pillTimer !== null) {
@@ -60,6 +85,7 @@ export function mountStatusBadge(root: HTMLElement): StatusBadgeHandle {
   }
 
   function setStatus(status: StatusKind, error?: string): void {
+    clearElapsedTimer();
     if (status === 'corrupt') {
       note.dataset.status = 'corrupt';
       note.setAttribute('role', 'status');
@@ -72,6 +98,39 @@ export function mountStatusBadge(root: HTMLElement): StatusBadgeHandle {
         color: 'var(--sz-warn-text)',
         background: 'color-mix(in srgb, var(--sz-warn) 12%, transparent)',
         border: '1px solid var(--sz-warn)',
+        borderRadius: 'var(--sz-radius-pill)',
+        padding: '2px 8px',
+      } satisfies Partial<CSSStyleDeclaration>);
+    } else if (status === 'generationFailed') {
+      // Same persistent amber treatment as 'corrupt' — this must survive
+      // until the user's next action, not vanish on a timer. Full error in
+      // the hover title; the visible text stays glanceable.
+      note.dataset.status = 'generation-failed';
+      note.setAttribute('role', 'status');
+      note.textContent = '⚠ Summary generation failed';
+      note.title = error
+        ? `Generation failed: ${error}`
+        : 'Generation failed — hover for details once available.';
+      Object.assign(note.style, {
+        color: 'var(--sz-warn-text)',
+        background: 'color-mix(in srgb, var(--sz-warn) 12%, transparent)',
+        border: '1px solid var(--sz-warn)',
+        borderRadius: 'var(--sz-radius-pill)',
+        padding: '2px 8px',
+      } satisfies Partial<CSSStyleDeclaration>);
+    } else if (status === 'synthesizing') {
+      note.dataset.status = 'synthesizing';
+      note.setAttribute('role', 'status');
+      const start = Date.now();
+      note.textContent = 'Generating summary… 0:00';
+      note.title = 'Engine B is generating the summary layers for this document.';
+      elapsedTimer = setInterval(() => {
+        note.textContent = `Generating summary… ${formatElapsed(start)}`;
+      }, 1000);
+      Object.assign(note.style, {
+        color: 'var(--sz-muted)',
+        background: 'transparent',
+        border: '1px solid var(--sz-border)',
         borderRadius: 'var(--sz-radius-pill)',
         padding: '2px 8px',
       } satisfies Partial<CSSStyleDeclaration>);
@@ -101,7 +160,7 @@ export function mountStatusBadge(root: HTMLElement): StatusBadgeHandle {
     }
   }
 
-  function flashUpdated(message = 'Updated'): void {
+  function flashUpdated(message = 'Updated', durationMs = PILL_MS): void {
     const reduced = prefersReducedMotion();
     if (pill === null) {
       pill = document.createElement('span');
@@ -148,17 +207,18 @@ export function mountStatusBadge(root: HTMLElement): StatusBadgeHandle {
     const label = pill.querySelector<HTMLElement>('[data-pill-label]');
     if (label) label.textContent = message;
 
-    // Reset the dismissal window so the pill lives 1500ms past the LAST call.
+    // Reset the dismissal window so the pill lives `durationMs` past the LAST call.
     clearPillTimer();
     pillTimer = setTimeout(() => {
       pillTimer = null;
       pill?.remove();
       pill = null;
-    }, PILL_MS);
+    }, durationMs);
   }
 
   function teardown(): void {
     clearPillTimer();
+    clearElapsedTimer();
     pill?.remove();
     pill = null;
     container.remove();

@@ -34,11 +34,13 @@ import {
   type MapBox,
 } from './ui/content-map';
 import { reconcile, restoreCaret, groupKey } from './state/reload';
+import { mountGenerateAffordance, type GenerateAffordanceHandle } from './ui/generate-affordance';
+import { remoteSynthesizer } from './native/engine-b-remote';
 
 // The store: main.ts is the only place (with state/) allowed to feed actions$.
 // Components dispatch + subscribe to selectors; only this file wires the bus.
 import { actions$, snapshot } from './state/store';
-import { caretPlaced, docLoaded, docClosed, zoomSet } from './state/actions';
+import { caretPlaced, docLoaded, docClosed, zoomSet, providerStatusLoaded, synthesisStarted, synthesisSucceeded, synthesisFailed } from './state/actions';
 import { selectCaret } from './state/selectors';
 import type { Subscription } from 'rxjs';
 
@@ -59,6 +61,16 @@ let currentIndex: ResolvedIndex | null = null;
 let currentPath: string | null = null;
 /** k=0 groups from the last render, keyed by sid, for keyed reconciliation (D7). */
 let prevGroups = new Map<string, HTMLElement>();
+/** Engine B (D10/§8.5): whether a usable provider is configured, and the
+    trust-boundary tooltip text to show on the Generate affordance. Refreshed
+    at startup and whenever an Untagged doc loads (catches a Settings change
+    made in the other window without needing live cross-window sync). */
+let providerConfigured = false;
+let providerGenerateTooltip = 'Generate summary';
+/** The in-flight Engine B request, if any — aborted on hot reload, doc
+    close, or a second Generate click (§3.2 row 1's switchMap pattern,
+    applied here since this path isn't itself store-driven). */
+let synthesisAbort: AbortController | null = null;
 /** True only when Engine-A summaries exist (native docs). Gates −1/−2. */
 let summariesAvailable = false;
 let scrubberTeardown: (() => void) | null = null;
@@ -69,6 +81,8 @@ let zoomTeardown: (() => void) | null = null;
 let statusBadge: StatusBadgeHandle | null = null;
 /** The content map sidebar (§4.9). Mounted once; driven by refreshMap/scroll. */
 let contentMap: ContentMapHandle | null = null;
+/** Engine B's Generate trigger (D10/§8.5, Figma node 199:494) — mounted once. */
+let generateAffordance: GenerateAffordanceHandle | null = null;
 let contentMapTeardown: (() => void) | null = null;
 /** The pre-open placeholder (Figma 77:2622); torn down on the first openFile. */
 let emptyStateTeardown: (() => void) | null = null;
@@ -90,6 +104,7 @@ let zoomFooterEl: HTMLElement;
 let statusEl: HTMLElement;
 let docFilenameEl: HTMLElement;
 let contentMapEl: HTMLElement;
+let generateAffordanceEl: HTMLButtonElement;
 
 /** Window-centered title-bar text (Figma 104-3409 slot) when no document is open. */
 const APP_NAME = 'Semantic Zoom';
@@ -99,8 +114,43 @@ function availableLevels(): ZoomLevel[] {
   return summariesAvailable ? [0, -1, -2] : [0];
 }
 
+/** Mirrors src-tauri/src/commands/provider_config.rs's ProviderConfig. */
+interface ProviderConfigDTO {
+  kind: 'remote' | 'ollama' | 'custom-local';
+  base_url: string;
+  model: string;
+}
+
+/**
+ * Engine B provider status (D10/§8.5), re-checked at startup and on every
+ * Untagged load. "Configured" means a usable endpoint: local providers just
+ * need a base_url; Remote also needs a saved key. Also computes the
+ * trust-boundary tooltip text — visible consent at the point of action, not
+ * a buried settings-screen disclosure.
+ */
+async function refreshProviderStatus(): Promise<void> {
+  try {
+    const config = await invoke<ProviderConfigDTO>('get_provider_config');
+    const needsKey = config.kind === 'remote';
+    const hasKey = needsKey ? await invoke<boolean>('get_api_key_status') : true;
+    const configured = config.base_url.trim() !== '' && hasKey;
+    providerConfigured = configured;
+    providerGenerateTooltip = needsKey
+      ? `Sends this document's text to ${config.base_url}.`
+      : 'Runs locally — nothing leaves your Mac.';
+    actions$.next(providerStatusLoaded(configured));
+  } catch (err) {
+    console.warn('refreshProviderStatus: get_provider_config/get_api_key_status failed:', err);
+    providerConfigured = false;
+    actions$.next(providerStatusLoaded(false));
+  }
+}
+
 /** (Re)mount the scrubber reflecting the active level and disabled segments,
-    and refresh the per-level context count beside it. */
+    and refresh the per-level context count beside it. The −1/−2 segments
+    stay in their normal disabled/dimmed state regardless of Engine B
+    availability (Figma node 199:164) — Generate is a separate affordance,
+    not a scrubber-segment special case. */
 function mountScrubberForState(): void {
   scrubberTeardown?.();
   const available = availableLevels();
@@ -111,6 +161,150 @@ function mountScrubberForState(): void {
     active: currentLevel,
   });
   updateZoomContext();
+  updateGenerateAffordance();
+}
+
+/**
+ * Generate affordance visibility (D10/§8.5's matrix, computed the same way
+ * selectors.ts's generateAffordanceVisibility does): shown only for an
+ * Untagged doc with a usable Engine B provider. Occupies the same corner
+ * slot as #content-map, which is hidden whenever there's no LookupTable —
+ * i.e. exactly when this needs to show — so the two never collide.
+ */
+function updateGenerateAffordance(): void {
+  const isUntagged = currentResult?.kind === 'untagged';
+  const visible = isUntagged && providerConfigured;
+  generateAffordance?.setVisible(visible);
+  generateAffordance?.setTooltip(providerGenerateTooltip);
+  // A freshly (re)mounted scrubber always reflects a settled state — never
+  // stuck mid-animation from a previous document. handleGenerate/handleCancel
+  // own the 'loading' transition explicitly while a request is in flight.
+  if (visible) generateAffordance?.setState('idle');
+}
+
+/**
+ * Engine B generation (D10/§8.4-§8.5): runs the retry-loop synthesizer
+ * (T6), persists via write_payload (T8 — hash-guarded, so a concurrent edit
+ * is never clobbered), then renders the result immediately rather than
+ * waiting for the watcher's own doc://changed round-trip (which still
+ * fires and is a no-op, same docHash). Aborts any prior in-flight request —
+ * a second click or a hot reload mid-flight must not race two writes.
+ */
+async function handleGenerate(): Promise<void> {
+  if (currentResult?.kind !== 'untagged' || currentPath === null) return;
+
+  synthesisAbort?.abort();
+  const controller = new AbortController();
+  synthesisAbort = controller;
+
+  actions$.next(synthesisStarted());
+  generateAffordance?.setState('loading');
+  // PERSISTENT badge, not just a toast: a run takes minutes, so anyone who
+  // looked away must still find the current state (and later the outcome)
+  // in the toolbar, not have missed a 3-second pill.
+  statusBadge?.setStatus('synthesizing');
+  statusEl.textContent = 'Generating…';
+  statusBadge?.flashUpdated('Generating summary…', TOAST_MS);
+
+  try {
+    const table = await remoteSynthesizer.synthesize(currentResult.raw, controller.signal);
+    if (controller.signal.aborted) return;
+
+    // write_payload's return value MUST be checked, not just awaited — a
+    // hash-mismatch guard (§8.4: the file changed on disk since we read it)
+    // resolves successfully with `{ kind: 'skippedHashMismatch' }`, not a
+    // thrown error. Treating any non-throwing result as success previously
+    // meant the UI claimed "Summary generated" and jumped to Native for a
+    // file that was never actually written — the next watcher reload would
+    // then silently snap it back to Untagged, since load_document correctly
+    // found no payload on disk. That mismatch is exactly what a hash-guard
+    // skip must surface honestly instead.
+    const outcome = await invoke<{ kind: 'written' | 'skippedHashMismatch' }>('write_payload', {
+      path: currentPath,
+      table,
+      docHash: table.docHash,
+    });
+    if (controller.signal.aborted) return;
+
+    if (outcome.kind === 'skippedHashMismatch') {
+      generateAffordance?.setState('idle');
+      console.error('write_payload: skipped — file changed on disk since generation started');
+      statusBadge?.setStatus('generationFailed', 'the file changed on disk while generating; nothing was written');
+      statusEl.textContent = 'Untagged';
+      statusBadge?.flashUpdated("Couldn't save — the file changed while generating", FAILURE_TOAST_MS);
+      mountScrubberForState();
+      return;
+    }
+
+    actions$.next(synthesisSucceeded(table));
+    currentTable = table;
+    currentIndex = buildIndex(table);
+    currentResult = { kind: 'native', table, raw: currentResult.raw };
+    summariesAvailable = true;
+    statusEl.textContent = 'Native';
+    statusBadge?.setStatus('native');
+    statusBadge?.flashUpdated('Summary generated', TOAST_MS);
+    renderCurrent();
+    mountScrubberForState();
+  } catch (err) {
+    if (controller.signal.aborted) return;
+    const message = err instanceof Error ? err.message : String(err);
+    actions$.next(synthesisFailed(message));
+    generateAffordance?.setState('idle');
+    // Persistent amber badge with the full error on hover — survives until
+    // the user's next action, unlike the toast. Console gets it verbatim.
+    console.error('Engine B generation failed:', message);
+    statusBadge?.setStatus('generationFailed', message);
+    statusEl.textContent = 'Untagged';
+    statusBadge?.flashUpdated(`Couldn't generate — ${shortenForToast(message)}`, FAILURE_TOAST_MS);
+    mountScrubberForState();
+  } finally {
+    if (synthesisAbort === controller) synthesisAbort = null;
+  }
+}
+
+/** How long Engine B's start/success/cancel toasts stay legible — longer
+    than the 1.5s hot-reload pill (spec §5.3), which is too brief to read a
+    full sentence. */
+const TOAST_MS = 3000;
+/** Failure toasts get even more time — the message is inherently less
+    skimmable ("Couldn't generate — ..."). */
+const FAILURE_TOAST_MS = 6000;
+
+/** Keep the transient pill to one glanceable line; full detail goes to
+    the console (see the call site above), never into the toast itself. */
+function shortenForToast(message: string, maxLen = 80): string {
+  const firstSentence = message.split(/(?<=[.!?])\s/)[0] ?? message;
+  return firstSentence.length > maxLen ? `${firstSentence.slice(0, maxLen - 1)}…` : firstSentence;
+}
+
+/**
+ * User-initiated cancel (hover-to-stop on the loading affordance, Figma
+ * node 199:890) — distinct from the silent aborts in handleDocChanged/
+ * closeDocument: this one gets its own toast because the user explicitly
+ * asked for it, where those are superseded-by-something-else and stay quiet.
+ * "Soft" cancellation: the in-flight llm_complete/write_payload calls keep
+ * running to completion on the Rust/provider side, their result is just
+ * ignored once `signal.aborted` is checked — matching the existing
+ * switchMap-abort convention (§3.2 row 1), not a real network cancel.
+ */
+function handleCancel(): void {
+  if (!synthesisAbort) return;
+  synthesisAbort.abort();
+  synthesisAbort = null;
+  // Real cancellation: drop Rust's in-flight HTTP request so the provider
+  // actually stops generating (llama-server frees the GPU the moment the
+  // connection drops) — without this, Stop only made the UI look idle
+  // while Ollama kept computing the full answer in the background.
+  void invoke('cancel_llm_generation');
+  actions$.next(synthesisFailed('cancelled by user'));
+  generateAffordance?.setState('idle');
+  // Back to the plain untagged note — a user-initiated cancel isn't a
+  // failure worth a persistent amber badge; the toast is acknowledgment.
+  statusBadge?.setStatus('untagged');
+  statusEl.textContent = 'Untagged';
+  statusBadge?.flashUpdated('Generation cancelled', TOAST_MS);
+  mountScrubberForState();
 }
 
 /**
@@ -607,6 +801,9 @@ function applyResult(result: LoadResultDTO): void {
       statusBadge?.setStatus('corrupt', result.error);
     } else {
       statusBadge?.setStatus('untagged');
+      // Re-check on every Untagged load (not just at startup): catches a
+      // Settings change made in the other window since app launch.
+      void refreshProviderStatus().then(() => mountScrubberForState());
     }
     mountScrubberForState();
     resetActiveGroup();
@@ -656,6 +853,12 @@ function closeDocument(): void {
   if (currentPath === null) return;
   addRecentFile(currentPath);
 
+  if (synthesisAbort) {
+    synthesisAbort.abort();
+    synthesisAbort = null;
+    void invoke('cancel_llm_generation'); // free the GPU too, not just the promise
+  }
+
   currentPath = null;
   currentResult = null;
   currentTable = null;
@@ -683,6 +886,7 @@ function closeDocument(): void {
   viewportEl.dataset.zoom = '0';
   resetActiveGroup();
   refreshMap(); // no table → hides the map
+  generateAffordance?.setVisible(false);
   showEmptyState();
 }
 
@@ -733,6 +937,13 @@ async function installMenu(): Promise<void> {
     text: 'Semantic Zoom',
     items: [
       await PredefinedMenuItem.new({ item: { About: null } }),
+      await sep(),
+      await MenuItem.new({
+        id: 'open-settings',
+        text: 'Settings…',
+        accelerator: 'CmdOrCtrl+,',
+        action: () => void invoke('open_settings_window'),
+      }),
       await sep(),
       await PredefinedMenuItem.new({ item: 'Services' }),
       await sep(),
@@ -964,8 +1175,14 @@ window.addEventListener('DOMContentLoaded', () => {
   statusEl = document.querySelector<HTMLElement>('#status')!;
   docFilenameEl = document.querySelector<HTMLElement>('#doc-filename')!;
   contentMapEl = document.querySelector<HTMLElement>('#content-map')!;
+  generateAffordanceEl = document.querySelector<HTMLButtonElement>('#generate-affordance')!;
 
   applyContentScale(); // seed --content-scale at 100%
+
+  generateAffordance = mountGenerateAffordance(generateAffordanceEl, {
+    onGenerate: () => void handleGenerate(),
+    onCancel: handleCancel,
+  });
 
   // Mount the non-modal status affordance once, into the toolbar. It is driven
   // imperatively (main.ts holds the load result + its corrupt error text).
@@ -1013,6 +1230,7 @@ window.addEventListener('DOMContentLoaded', () => {
   void installMenu();
   installKeyboardShortcuts();
   installDevHud();
+  void refreshProviderStatus();
 
   // The watcher fires this on disk change → silent hot-reload (spec §5.3).
   void listen('doc://changed', () => {
@@ -1032,6 +1250,14 @@ window.addEventListener('DOMContentLoaded', () => {
  */
 async function handleDocChanged(): Promise<void> {
   if (currentPath === null) return;
+
+  // A hot reload supersedes any in-flight Generate request (§3.2 row 1's
+  // switchMap pattern) — the file on disk just changed out from under it.
+  if (synthesisAbort) {
+    synthesisAbort.abort();
+    synthesisAbort = null;
+    void invoke('cancel_llm_generation'); // free the GPU too, not just the promise
+  }
 
   let newResult: LoadResultDTO;
   try {
