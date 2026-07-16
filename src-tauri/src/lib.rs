@@ -25,6 +25,7 @@ pub fn run() {
             commands::secrets::delete_api_key,
             commands::provider_config::get_provider_config,
             commands::provider_config::set_provider_config,
+            commands::provider_config::get_saved_provider_config,
             commands::window::open_settings_window,
             commands::llm_client::llm_complete,
             commands::llm_client::probe_provider,

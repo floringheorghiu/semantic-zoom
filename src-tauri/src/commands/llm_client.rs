@@ -40,11 +40,23 @@ struct ResponseFormat {
     kind: &'static str,
 }
 
+/// Hard output ceiling sent with every request. A healthy synthesis payload
+/// is ~1k tokens (largest observed: 1020 for a 4.4k-token doc), so 8k is
+/// generous headroom — while a runaway generation (observed live 2026-07-16:
+/// Cerebras gemma-4-31b emitted tokens to the provider's own 40k cap on all
+/// 3 retry attempts, billed in full) now dies ~5× cheaper and faster. A
+/// legitimate payload that ever grows past this truncates into invalid JSON,
+/// which the parse→check→retry loop rejects VISIBLY — never a silent cap.
+/// `max_tokens` (not `max_completion_tokens`) is the field both Ollama's
+/// OpenAI-compat layer and Cerebras accept.
+const MAX_OUTPUT_TOKENS: u32 = 8_000;
+
 #[derive(Debug, Serialize)]
 struct ChatRequest<'a> {
     model: &'a str,
     messages: Vec<ChatMessage<'a>>,
     temperature: f32,
+    max_tokens: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     response_format: Option<ResponseFormat>,
 }
@@ -87,6 +99,7 @@ pub async fn complete(
             ChatMessage { role: "user", content: user_message },
         ],
         temperature,
+        max_tokens: MAX_OUTPUT_TOKENS,
         response_format: json_mode.then_some(ResponseFormat { kind: "json_object" }),
     };
 
@@ -393,7 +406,8 @@ mod tests {
                     {"role": "system", "content": "sys"},
                     {"role": "user", "content": "user"}
                 ],
-                "temperature": 0.0
+                "temperature": 0.0,
+                "max_tokens": 8000
             })))
             .with_status(200)
             .with_header("content-type", "application/json")
