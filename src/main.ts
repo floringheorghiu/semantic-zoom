@@ -998,6 +998,7 @@ function showEmptyState(): void {
     recentFiles: getRecentFiles(),
     onOpen: () => void promptOpen(),
     onSelectRecent: (path) => void openFile(path),
+    onSettings: () => void invoke('open_settings_window'),
     version: __APP_VERSION__,
   }).teardown;
   docFilenameEl.textContent = APP_NAME;
