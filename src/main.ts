@@ -35,6 +35,11 @@ import {
 } from './ui/content-map';
 import { reconcile, restoreCaret, groupKey } from './state/reload';
 import { mountGenerateAffordance, type GenerateAffordanceHandle } from './ui/generate-affordance';
+import {
+  mountGeneratePicker,
+  type GeneratePickerChoice,
+  type GeneratePickerHandle,
+} from './ui/generate-picker';
 import { remoteSynthesizer } from './native/engine-b-remote';
 
 // The store: main.ts is the only place (with state/) allowed to feed actions$.
@@ -51,6 +56,7 @@ import './styles/focus-mask.css';
 import './styles/reading.css';
 import './styles/content-map.css';
 import './styles/empty-state.css';
+import './styles/generate-picker.css';
 
 // --- session state (the RxJS store arrives in Task 2.1; direct wiring for now) ---
 let currentLevel: ZoomLevel = 0;
@@ -83,6 +89,8 @@ let statusBadge: StatusBadgeHandle | null = null;
 let contentMap: ContentMapHandle | null = null;
 /** Engine B's Generate trigger (D10/§8.5, Figma node 199:494) — mounted once. */
 let generateAffordance: GenerateAffordanceHandle | null = null;
+/** The local-vs-remote picker modal (Figma 202:1232) — non-null while open. */
+let generatePicker: GeneratePickerHandle | null = null;
 let contentMapTeardown: (() => void) | null = null;
 /** The pre-open placeholder (Figma 77:2622); torn down on the first openFile. */
 let emptyStateTeardown: (() => void) | null = null;
@@ -174,12 +182,124 @@ function mountScrubberForState(): void {
 function updateGenerateAffordance(): void {
   const isUntagged = currentResult?.kind === 'untagged';
   const visible = isUntagged && providerConfigured;
+  // A picker left open for a document that can no longer generate (closed,
+  // reloaded with a payload, went corrupt) is a stale question — retract it.
+  if (!isUntagged) closeGeneratePicker();
   generateAffordance?.setVisible(visible);
   generateAffordance?.setTooltip(providerGenerateTooltip);
   // A freshly (re)mounted scrubber always reflects a settled state — never
   // stuck mid-animation from a previous document. handleGenerate/handleCancel
   // own the 'loading' transition explicitly while a request is in flight.
   if (visible) generateAffordance?.setState('idle');
+}
+
+/** Provider kinds that never send document text off-machine. */
+function isLocalKind(kind: ProviderConfigDTO['kind']): boolean {
+  return kind === 'ollama' || kind === 'custom-local';
+}
+
+/** Picker label for the remote option: "Cerebras" per the mock unless the
+    configured endpoint is some other host, which is then shown honestly. */
+function remoteDisplayName(baseUrl: string): string {
+  try {
+    const host = new URL(baseUrl).hostname;
+    return host === '' || /cerebras/i.test(host) ? 'Cerebras' : host;
+  } catch {
+    return 'Cerebras';
+  }
+}
+
+function closeGeneratePicker(): void {
+  generatePicker?.teardown();
+  generatePicker = null;
+}
+
+/**
+ * The Generate affordance no longer starts synthesis directly — it opens the
+ * local-vs-remote picker (Figma 202:1232) and the chosen provider is written
+ * to the config store before generating, since that store is the single
+ * source the Rust LLM client reads. Label names come from the per-kind saved
+ * configs so the dialog reflects what a pick will actually run.
+ */
+async function openGeneratePicker(): Promise<void> {
+  if (generatePicker !== null) return;
+  if (currentResult?.kind !== 'untagged') return;
+
+  let localName: string | undefined;
+  let remoteName: string | undefined;
+  try {
+    const current = await invoke<ProviderConfigDTO>('get_provider_config');
+    const local = isLocalKind(current.kind)
+      ? current
+      : await invoke<ProviderConfigDTO>('get_saved_provider_config', { kind: 'ollama' });
+    localName = local.kind === 'custom-local' ? local.model || 'a local model' : 'Ollama';
+    const remote =
+      current.kind === 'remote'
+        ? current
+        : await invoke<ProviderConfigDTO>('get_saved_provider_config', { kind: 'remote' });
+    remoteName = remoteDisplayName(remote.base_url);
+  } catch (err) {
+    // Names are cosmetic — fall back to the mock's defaults rather than
+    // blocking the picker on a config read failure.
+    console.warn('openGeneratePicker: could not derive provider names:', err);
+  }
+
+  generatePicker = mountGeneratePicker(document.body, {
+    localName,
+    remoteName,
+    onPick: (choice) => void pickProviderAndGenerate(choice),
+    onDismiss: closeGeneratePicker,
+  });
+}
+
+/**
+ * Switch the provider config to match the picked option (if it doesn't
+ * already), then run the normal generation path. Switching never erases the
+ * other provider's settings — set_provider_config remembers a record per
+ * kind, and get_saved_provider_config returns it on the way back. A remote
+ * pick with no endpoint or key routes to Settings instead of failing later
+ * inside the HTTP client.
+ */
+async function pickProviderAndGenerate(choice: GeneratePickerChoice): Promise<void> {
+  closeGeneratePicker();
+  try {
+    const current = await invoke<ProviderConfigDTO>('get_provider_config');
+    if (choice === 'local') {
+      if (!isLocalKind(current.kind)) {
+        const target = await invoke<ProviderConfigDTO>('get_saved_provider_config', {
+          kind: 'ollama',
+        });
+        await invoke('set_provider_config', { config: target });
+      }
+    } else {
+      const target =
+        current.kind === 'remote'
+          ? current
+          : await invoke<ProviderConfigDTO>('get_saved_provider_config', { kind: 'remote' });
+      const hasKey = await invoke<boolean>('get_api_key_status');
+      if (target.base_url.trim() === '' || !hasKey) {
+        statusBadge?.flashUpdated(
+          'Set the remote endpoint and API key in Settings first',
+          FAILURE_TOAST_MS,
+        );
+        void invoke('open_settings_window');
+        return;
+      }
+      if (current.kind !== 'remote') {
+        await invoke('set_provider_config', { config: target });
+      }
+    }
+    await refreshProviderStatus();
+    updateGenerateAffordance();
+    await handleGenerate();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('Provider switch failed:', message);
+    statusBadge?.flashUpdated(
+      `Couldn't switch provider — ${shortenForToast(message)}`,
+      FAILURE_TOAST_MS,
+    );
+  }
 }
 
 /**
@@ -1180,7 +1300,9 @@ window.addEventListener('DOMContentLoaded', () => {
   applyContentScale(); // seed --content-scale at 100%
 
   generateAffordance = mountGenerateAffordance(generateAffordanceEl, {
-    onGenerate: () => void handleGenerate(),
+    // Interpose the local-vs-remote picker (Figma 202:1232) between the
+    // click and handleGenerate — the pick decides the provider config.
+    onGenerate: () => void openGeneratePicker(),
     onCancel: handleCancel,
   });
 
