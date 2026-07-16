@@ -1,0 +1,66 @@
+/* Generation-history tooltip (Figma 241:456 "Tooltip-LLM-results") — the
+   hover card under the permanent status pill. A status surface, not a
+   modal: no overlay, no input blocking. Entry fades `opacity` only (D1). */
+
+.generation-tooltip {
+  position: fixed;
+  z-index: 15; /* above the badge cluster (5), below the picker modal (20) */
+  width: 440px;
+  max-width: calc(100vw - 24px);
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 20px;
+  background: var(--sz-bg);
+  border: 1px solid var(--sz-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 4px rgba(0, 0, 0, 0.25);
+  font: 12px/20px var(--sz-font);
+  letter-spacing: -0.15px;
+  opacity: 1;
+  animation: generation-tooltip-fade-in 120ms ease-out;
+}
+
+@keyframes generation-tooltip-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .generation-tooltip {
+    animation: none;
+  }
+}
+
+/* Entries stack newest-first, separated by hairlines (failure mock). */
+.generation-tooltip__entry + .generation-tooltip__entry {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--sz-hairline);
+}
+
+.generation-tooltip__row {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.generation-tooltip__key {
+  flex: 0 0 60px;
+  font-weight: 600;
+  color: var(--sz-muted);
+}
+
+.generation-tooltip__value {
+  flex: 1;
+  min-width: 0;
+  color: var(--sz-ink);
+  overflow-wrap: break-word;
+}
+
+/* The quoted error paragraph under "n failed attempts." (failure mock) —
+   slightly indented by its own line, muted like the mock's quote. */
+.generation-tooltip__error {
+  display: block;
+  color: var(--sz-muted);
+}

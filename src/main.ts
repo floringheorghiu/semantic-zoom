@@ -40,7 +40,12 @@ import {
   type GeneratePickerChoice,
   type GeneratePickerHandle,
 } from './ui/generate-picker';
-import { remoteSynthesizer } from './native/engine-b-remote';
+import { remoteSynthesizer, lastSynthesisRunMeta } from './native/engine-b-remote';
+import {
+  mountGenerationTooltip,
+  type GenerationRun,
+  type GenerationTooltipHandle,
+} from './ui/generation-tooltip';
 
 // The store: main.ts is the only place (with state/) allowed to feed actions$.
 // Components dispatch + subscribe to selectors; only this file wires the bus.
@@ -57,6 +62,7 @@ import './styles/reading.css';
 import './styles/content-map.css';
 import './styles/empty-state.css';
 import './styles/generate-picker.css';
+import './styles/generation-tooltip.css';
 
 // --- session state (the RxJS store arrives in Task 2.1; direct wiring for now) ---
 let currentLevel: ZoomLevel = 0;
@@ -85,6 +91,10 @@ let focusMaskTeardown: (() => void) | null = null;
 let zoomTeardown: (() => void) | null = null;
 /** Non-modal status affordance (spec §2.6, §5.3): warning badge + "Updated" pill. */
 let statusBadge: StatusBadgeHandle | null = null;
+let generationTooltip: GenerationTooltipHandle | null = null;
+/** Generation-run history for the OPEN document (chronological, as stored —
+    the tooltip reverses for newest-first display). */
+let generationRuns: GenerationRun[] = [];
 /** The content map sidebar (§4.9). Mounted once; driven by refreshMap/scroll. */
 let contentMap: ContentMapHandle | null = null;
 /** Engine B's Generate trigger (D10/§8.5, Figma node 199:494) — mounted once. */
@@ -151,6 +161,66 @@ async function refreshProviderStatus(): Promise<void> {
     console.warn('refreshProviderStatus: get_provider_config/get_api_key_status failed:', err);
     providerConfigured = false;
     actions$.next(providerStatusLoaded(false));
+  }
+}
+
+/** The most recent recorded run failed → the untagged pill's dot turns
+    amber (spec: generation-history tooltip design). */
+function lastGenerationRunFailed(): boolean {
+  return generationRuns[generationRuns.length - 1]?.outcome === 'failed';
+}
+
+/** Load the sidecar history for a freshly opened document (rename-resilient
+    lookup happens Rust-side). A read failure means an empty tooltip, never
+    a blocked open. */
+async function refreshGenerationHistory(path: string): Promise<void> {
+  try {
+    generationRuns = await invoke<GenerationRun[]>('get_generation_history', { path });
+  } catch (err) {
+    console.warn('get_generation_history failed:', err);
+    generationRuns = [];
+  }
+}
+
+/**
+ * Record a completed run (success or failure — NEVER cancels, which are the
+ * user changing their mind, not an outcome worth history). Rust assigns the
+ * version and returns the capped list, so the tooltip re-renders from what
+ * was actually persisted. Recording is best-effort: a store write failure
+ * must not turn a successful generation into a visible error.
+ */
+async function recordGenerationRun(
+  outcome: 'succeeded' | 'failed',
+  startedAtMs: number,
+  config: ProviderConfigDTO | null,
+  error?: string,
+  table?: LookupTable,
+): Promise<void> {
+  if (currentPath === null) return;
+  const meta = lastSynthesisRunMeta();
+  const run: GenerationRun = {
+    outcome,
+    providerKind: config?.kind ?? 'ollama',
+    baseUrl: config?.base_url ?? '',
+    model: config?.model ?? '',
+    durationMs: Date.now() - startedAtMs,
+    finishedAt: new Date().toISOString(),
+    version: 0, // assigned by append_generation_run
+    attempts: meta?.attempts ?? 0,
+    temperature: meta?.temperature ?? 0,
+    promptTokens: meta?.usage?.promptTokens,
+    completionTokens: meta?.usage?.completionTokens,
+    milestones: table ? table.order.meta.length : undefined,
+    sections: table ? table.order.sections.length : undefined,
+    error,
+  };
+  try {
+    generationRuns = await invoke<GenerationRun[]>('append_generation_run', {
+      path: currentPath,
+      run,
+    });
+  } catch (err) {
+    console.warn('append_generation_run failed (run not recorded):', err);
   }
 }
 
@@ -274,6 +344,17 @@ async function handleGenerate(): Promise<void> {
   const controller = new AbortController();
   synthesisAbort = controller;
 
+  // History raw material: what config this run ACTUALLY uses, and when it
+  // started. Read up front — a Settings change mid-run must not relabel it.
+  const startedAt = Date.now();
+  let runConfig: ProviderConfigDTO | null = null;
+  try {
+    runConfig = await invoke<ProviderConfigDTO>('get_provider_config');
+  } catch (err) {
+    console.warn('handleGenerate: could not read provider config for history:', err);
+  }
+  if (controller.signal.aborted) return;
+
   actions$.next(synthesisStarted());
   generateAffordance?.setState('loading');
   // PERSISTENT badge, not just a toast: a run takes minutes, so anyone who
@@ -310,10 +391,17 @@ async function handleGenerate(): Promise<void> {
       statusEl.textContent = 'Untagged';
       statusBadge?.flashUpdated("Couldn't save — the file changed while generating", FAILURE_TOAST_MS);
       mountScrubberForState();
+      void recordGenerationRun(
+        'failed',
+        startedAt,
+        runConfig,
+        'Generation failed: the file changed on disk while generating; nothing was written',
+      );
       return;
     }
 
     actions$.next(synthesisSucceeded(table));
+    void recordGenerationRun('succeeded', startedAt, runConfig, undefined, table);
     currentTable = table;
     currentIndex = buildIndex(table);
     currentResult = { kind: 'native', table, raw: currentResult.raw };
@@ -327,6 +415,7 @@ async function handleGenerate(): Promise<void> {
     if (controller.signal.aborted) return;
     const message = err instanceof Error ? err.message : String(err);
     actions$.next(synthesisFailed(message));
+    void recordGenerationRun('failed', startedAt, runConfig, `Generation failed: ${message}`);
     generateAffordance?.setState('idle');
     // Persistent amber badge with the full error on hover — survives until
     // the user's next action, unlike the toast. Console gets it verbatim.
@@ -377,8 +466,9 @@ function handleCancel(): void {
   actions$.next(synthesisFailed('cancelled by user'));
   generateAffordance?.setState('idle');
   // Back to the plain untagged note — a user-initiated cancel isn't a
-  // failure worth a persistent amber badge; the toast is acknowledgment.
-  statusBadge?.setStatus('untagged');
+  // failure worth a persistent amber badge (and is never recorded in the
+  // generation history); the toast is acknowledgment.
+  statusBadge?.setStatus('untagged', undefined, { lastRunFailed: lastGenerationRunFailed() });
   statusEl.textContent = 'Untagged';
   statusBadge?.flashUpdated('Generation cancelled', TOAST_MS);
   mountScrubberForState();
@@ -877,7 +967,7 @@ function applyResult(result: LoadResultDTO): void {
     if (result.kind === 'corrupt') {
       statusBadge?.setStatus('corrupt', result.error);
     } else {
-      statusBadge?.setStatus('untagged');
+      statusBadge?.setStatus('untagged', undefined, { lastRunFailed: lastGenerationRunFailed() });
       // Re-check on every Untagged load (not just at startup): catches a
       // Settings change made in the other window since app launch.
       void refreshProviderStatus().then(() => mountScrubberForState());
@@ -941,6 +1031,7 @@ function closeDocument(): void {
   currentTable = null;
   currentIndex = null;
   currentLevel = 0;
+  generationRuns = []; // history is per-document; the tooltip goes dormant
   summariesAvailable = false;
   prevGroups = new Map();
   caretIsCurrent = false;
@@ -957,7 +1048,7 @@ function closeDocument(): void {
   zoomContextEl.textContent = '';
   statusEl.textContent = 'No document';
   // docFilenameEl reset to APP_NAME by showEmptyState() below.
-  statusBadge?.setStatus('native'); // clears any corrupt/untagged note
+  statusBadge?.setStatus('none'); // no document → the status pill disappears
 
   viewportEl.replaceChildren();
   viewportEl.dataset.zoom = '0';
@@ -971,6 +1062,9 @@ export async function openFile(path: string): Promise<void> {
   currentPath = path; // remembered so `doc://changed` can silently reload it (§5.3)
   // Title-bar filename (Figma 104-3409): the basename, window-centered.
   docFilenameEl.textContent = path.split('/').pop() ?? path;
+  // History BEFORE applyResult — the untagged pill's dot state (and the
+  // tooltip behind it) must reflect this document from first paint.
+  await refreshGenerationHistory(path);
   const result = await invoke<LoadResultDTO>('load_document', { path });
   hideEmptyState();
   addRecentFile(path);
@@ -1268,6 +1362,13 @@ window.addEventListener('DOMContentLoaded', () => {
   const toolbar = document.querySelector<HTMLElement>('.toolbar') ?? document.body;
   statusBadge = mountStatusBadge(toolbar);
 
+  // The generation-history hover card (Figma 241:456) rides on the pill.
+  // getRuns is a live getter — no history (fresh raw file) ⇒ it never opens.
+  generationTooltip = mountGenerationTooltip(document.body, {
+    anchor: statusBadge.anchor,
+    getRuns: () => generationRuns,
+  });
+
   // Mount the two-frame zoom-transition effect once (spec §2.5). Subsequent
   // ZOOM_SET actions drive crossfades; the first render on open stays direct.
   // After a transition settles into its FINAL layer, (re)mount the caret and
@@ -1298,6 +1399,8 @@ window.addEventListener('DOMContentLoaded', () => {
     caretTeardown = null;
     focusMaskTeardown?.();
     focusMaskTeardown = null;
+    generationTooltip?.teardown();
+    generationTooltip = null;
     statusBadge?.teardown();
     statusBadge = null;
     contentMapTeardown?.();
@@ -1436,7 +1539,7 @@ async function handleDocChanged(): Promise<void> {
     if (newResult.kind === 'corrupt') {
       statusBadge?.setStatus('corrupt', newResult.error);
     } else {
-      statusBadge?.setStatus('untagged');
+      statusBadge?.setStatus('untagged', undefined, { lastRunFailed: lastGenerationRunFailed() });
     }
     mountScrubberForState();
     resetActiveGroup();
