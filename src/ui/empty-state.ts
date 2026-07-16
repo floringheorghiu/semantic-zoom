@@ -3,10 +3,6 @@
 // ("Open a Markdown Document" / "App Settings"), a Recent Files list, and a
 // bottom shortcut-hints bar with the app version. Tauri-free and store-free —
 // main.ts drives it imperatively (ui/ boundary), like status-badge.ts.
-//
-// "App Settings" is rendered disabled: settings UI is an explicit Phase-1
-// non-goal (spec §7), so the row keeps the Figma layout without wiring up a
-// feature that doesn't exist yet.
 import type { RecentFile } from '../state/recent-files';
 
 export interface EmptyStateHandle {
@@ -17,6 +13,7 @@ export interface EmptyStateOptions {
   recentFiles: RecentFile[];
   onOpen: () => void;
   onSelectRecent: (path: string) => void;
+  onSettings: () => void;
   /** App version shown at the end of the footer (e.g. "0.3.0"); omitted → no version chip. */
   version?: string;
 }
@@ -123,7 +120,8 @@ export function mountEmptyState(root: HTMLElement, opts: EmptyStateOptions): Emp
   actions.appendChild(
     buildActionRow('Open a Markdown Document', '⌘O', { onClick: opts.onOpen }),
   );
-  actions.appendChild(buildActionRow('App Settings', '⌘S', { disabled: true }));
+  // "⌘," matches the Settings… accelerator installed by main.ts's app menu.
+  actions.appendChild(buildActionRow('App Settings', '⌘,', { onClick: opts.onSettings }));
   body.appendChild(actions);
 
   if (opts.recentFiles.length > 0) {
