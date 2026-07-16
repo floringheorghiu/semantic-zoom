@@ -49,7 +49,11 @@ pub fn delete_api_key() -> Result<(), String> {
 /// command to build the Authorization header. Never exposed as a
 /// #[tauri::command]; the key must not have a JS-callable path back out.
 pub(crate) fn get_api_key() -> Result<String, String> {
-    entry_for(SERVICE)?
+    get_key_for(SERVICE)
+}
+
+fn get_key_for(service: &str) -> Result<String, String> {
+    entry_for(service)?
         .get_password()
         .map_err(|_| "No API key configured".to_string())
 }
@@ -92,5 +96,20 @@ mod tests {
     #[test]
     fn production_service_name_is_never_used_by_tests() {
         assert_ne!(TEST_SERVICE, SERVICE);
+    }
+
+    /// Per-message test for the missing-key path: this exact string is what
+    /// `llm_complete` surfaces to the UI when a remote provider is selected
+    /// with no key saved, so it is user-facing copy, not an internal detail.
+    /// Exercised via `get_key_for` on the throwaway service — same code path
+    /// `get_api_key()` delegates to, without touching the production entry.
+    #[test]
+    fn missing_key_yields_the_no_api_key_configured_message() {
+        let _guard = KEYCHAIN_LOCK.lock().unwrap();
+
+        let _ = delete_for(TEST_SERVICE);
+
+        let err = get_key_for(TEST_SERVICE).expect_err("expected an error with no key saved");
+        assert_eq!(err, "No API key configured");
     }
 }
