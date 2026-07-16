@@ -20,7 +20,13 @@ output.
 One history entry per completed generation **run** (a click of Generate →
 success or failure). User-cancelled runs are **never** recorded. Entries are
 keyed to the document's absolute file path and persist across app restarts.
-A renamed/moved file starts with an empty history (accepted limitation).
+
+**Rename resilience:** each per-document record also stores the sha256 of
+the file's bytes as of its last recorded run. `get_generation_history(path)`
+first looks up by path; on a miss it reads and hashes the file at `path` and
+scans records for a matching content hash — a renamed/moved but otherwise
+unchanged file finds its history, and the record migrates to the new path.
+(A file that was both moved AND edited starts fresh; accepted.)
 
 Entry fields:
 
@@ -42,9 +48,11 @@ Entry fields:
 
 `generation-history.json` in the app config dir, beside
 `provider-config.json`, following `provider_config.rs`'s store pattern:
-`{ "<absolute doc path>": [entries…] }`, capped at the **20 most recent
-entries per document** (drop oldest). Corrupt/missing file → empty history,
-never an error.
+`{ "<absolute doc path>": { "contentHash": "<sha256 hex>", "runs": [entries…] } }`,
+capped at the **20 most recent runs per document** (drop oldest).
+`contentHash` is refreshed on every append (hashing the file as it exists
+after the run — for successes that's post-`write_payload`). Corrupt/missing
+store → empty history, never an error.
 
 Two new Tauri commands (same crossing class as the existing
 provider-config/llm commands — the three sacred crossings of document truth
@@ -119,5 +127,5 @@ the schema allows omission.
 ## Out of scope
 
 - History for documents generated outside this app (no payload inspection).
-- Cross-file history migration on rename/move.
+- History for a file that was both moved and edited (hash fallback misses).
 - Cost estimation from token counts.

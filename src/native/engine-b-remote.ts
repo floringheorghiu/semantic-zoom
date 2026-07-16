@@ -34,6 +34,37 @@ const TEMPERATURE_BY_ATTEMPT = [0.0, 0.3, 0.6];
 
 export class SynthesisAbortedError extends Error {}
 
+/** Mirrors llm_client.rs's `Completion` (camelCase over the bridge). */
+interface LlmCompletion {
+  content: string;
+  usage?: { promptTokens?: number; completionTokens?: number };
+}
+
+/**
+ * Metadata about the most recent synthesis run — the generation-history
+ * tooltip's raw material. A side channel rather than a Synthesizer interface
+ * change (that interface is the stable seam engine-b.ts owns); safe because
+ * the app has exactly ONE synthesis in flight at a time (switchMap
+ * semantics, LlmCancelState's supersede rule).
+ */
+export interface SynthesisRunMeta {
+  /** Retry-ladder attempts actually used (1–3). */
+  attempts: number;
+  /** Temperature of the FINAL attempt — the one whose output (or final
+      rejection) the run's outcome describes. */
+  temperature: number;
+  /** Provider-reported usage of the final attempt, if it sent any. */
+  usage: { promptTokens?: number; completionTokens?: number } | null;
+}
+
+let lastRunMeta: SynthesisRunMeta | null = null;
+
+/** Meta of the last remoteSynthesizer run, success or failure. Null when no
+    provider call was ever made (pre-flight refusal, empty document). */
+export function lastSynthesisRunMeta(): SynthesisRunMeta | null {
+  return lastRunMeta;
+}
+
 /**
  * Token/cost ceiling (D10, plan §8.6): v1 refuses documents over the model's
  * context limit with a clear message — no silent truncation or chunking.
@@ -63,6 +94,7 @@ function checkAborted(signal: AbortSignal): void {
 
 export const remoteSynthesizer: Synthesizer = {
   async synthesize(raw: string, signal: AbortSignal): Promise<LookupTable> {
+    lastRunMeta = null;
     checkAborted(signal);
 
     const source = prePayloadSource(raw);
@@ -98,12 +130,15 @@ export const remoteSynthesizer: Synthesizer = {
       // settings — the prompt's "Output ONLY JSON" line is the fallback,
       // not the mechanism. A wild-document run broke JSON syntax on all 3
       // attempts before this was wired in.
-      const responseText = await invoke<string>('llm_complete', {
+      const temperature = TEMPERATURE_BY_ATTEMPT[attempt - 1] ?? 0.6;
+      const completion = await invoke<LlmCompletion>('llm_complete', {
         systemPrompt: SYNTHESIS_SYSTEM_PROMPT,
         userMessage,
         jsonMode: true,
-        temperature: TEMPERATURE_BY_ATTEMPT[attempt - 1] ?? 0.6,
+        temperature,
       });
+      const responseText = completion.content;
+      lastRunMeta = { attempts: attempt, temperature, usage: completion.usage ?? null };
 
       checkAborted(signal);
 
