@@ -34,6 +34,23 @@ const TEMPERATURE_BY_ATTEMPT = [0.0, 0.3, 0.6];
 
 export class SynthesisAbortedError extends Error {}
 
+/**
+ * Token/cost ceiling (D10, plan §8.6): v1 refuses documents over the model's
+ * context limit with a clear message — no silent truncation or chunking.
+ * ProviderConfig carries no per-model context size, so v1 uses a fixed
+ * conservative ceiling instead of a true per-model limit: 32k input tokens
+ * covers every provider in the current matrix (a ~100-block document
+ * measured ~20k — see llm_client.rs's timeout note) while still refusing
+ * before a genuinely oversized prompt reaches — and fails opaquely at — the
+ * provider. A per-model limit would arrive as a ProviderConfig field.
+ */
+export const MAX_INPUT_TOKENS = 32_000;
+
+/** ~4 chars/token, rounded UP — the refusal must err conservative. */
+export function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
 /** Model-facing document title: first heading's text, else a generic label. */
 function deriveTitle(blocks: SegmentBlock[]): string {
   const heading = blocks.find((b) => b.kind === 'heading');
@@ -56,6 +73,19 @@ export const remoteSynthesizer: Synthesizer = {
     const inputIds = blocks.map((b) => b.id);
     const title = deriveTitle(blocks);
     const baseUserMessage = buildUserMessage(title, blocks);
+
+    // Refuse BEFORE the first provider call — the whole model input (system
+    // prompt + document-bearing user message), not just the raw source, is
+    // what has to fit. Corrective retries only append a short violation note,
+    // so the pre-flight estimate stands for all attempts.
+    const inputTokens = estimateTokens(SYNTHESIS_SYSTEM_PROMPT + baseUserMessage);
+    if (inputTokens > MAX_INPUT_TOKENS) {
+      throw new Error(
+        `Document is too large to generate a summary: ~${inputTokens.toLocaleString()} tokens ` +
+        `exceeds the model context limit of ${MAX_INPUT_TOKENS.toLocaleString()}. ` +
+        `Nothing was sent to the provider (v1 refuses rather than truncating).`,
+      );
+    }
 
     let userMessage = baseUserMessage;
     let lastViolation = '';
