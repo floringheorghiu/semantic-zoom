@@ -1,32 +1,33 @@
-// generate-picker.ts — the local-vs-remote inference picker shown when the
-// Generate affordance is clicked (Figma node 202:1232, "Modal-LLM-selection",
-// in-context mockup 202:1236). Two option cards — "Generate locally" /
-// "Generate remotely" — over a dimming overlay, with a close ✕.
+// generate-picker.ts — the inference-provider picker shown when the Generate
+// affordance is clicked (Figma node 252:951, "Modal-LLM-selection-v2"). Three
+// option cards mirroring the Settings provider kinds — Ollama, local custom
+// server, remote endpoint — over a dimming overlay, with a close ✕. The
+// microcopy is fixed and model-agnostic per the v2 design; only the option
+// picked, not a provider name, varies at runtime.
 //
 // This is deliberately a MODAL, unlike every status surface in this app
 // (status-badge.ts's "NEVER a modal" rule): it isn't feedback, it's a
 // user-initiated choice that blocks the action it configures, and it is the
-// visible trust boundary of §8.5 — picking "remotely" is the moment document
-// text is consented to leave the machine, so it must interrupt.
+// visible trust boundary of §8.5 — picking the remote endpoint is the moment
+// document text is consented to leave the machine, so it must interrupt.
 //
-// Pure DOM, no `@tauri-apps/*` (ui/ boundary). The caller (main.ts) decides
-// what "local"/"remote" mean, owns the lifecycle, and tears this down from
-// its onPick/onDismiss handlers. Icons are the exact Figma-exported assets
-// (figma-design-to-code icon-fidelity rule), recolorable via `--fill-0`.
+// Pure DOM, no `@tauri-apps/*` (ui/ boundary). The caller (main.ts) maps the
+// choice onto the provider config store, owns the lifecycle, and tears this
+// down from its onPick/onDismiss handlers. Icons are the exact
+// Figma-exported assets (figma-design-to-code icon-fidelity rule),
+// recolorable via `--fill-0`.
 
-import ollamaIconSvg from '../assets/llm-ollama.svg?raw';
-import cerebrasIconSvg from '../assets/llm-cerebras.svg?raw';
+import ollamaIconSvg from '../assets/picker-ollama.svg?raw';
+import customLocalIconSvg from '../assets/picker-custom-local.svg?raw';
+import remoteIconSvg from '../assets/picker-remote.svg?raw';
 import closeIconSvg from '../assets/picker-close.svg?raw';
 
-export type GeneratePickerChoice = 'local' | 'remote';
+/** Mirrors ProviderConfig.kind in src-tauri/src/commands/provider_config.rs. */
+export type GeneratePickerChoice = 'ollama' | 'custom-local' | 'remote';
 
 export interface GeneratePickerOptions {
   onPick: (choice: GeneratePickerChoice) => void;
   onDismiss: () => void;
-  /** Second label line, e.g. "with Ollama" — callers derive the real
-      provider names from the config; the defaults match the mock. */
-  localName?: string;
-  remoteName?: string;
 }
 
 export interface GeneratePickerHandle {
@@ -36,8 +37,7 @@ export interface GeneratePickerHandle {
 function buildOption(
   choice: GeneratePickerChoice,
   iconSvg: string,
-  line1: string,
-  line2: string,
+  lines: string[],
 ): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.type = 'button';
@@ -51,11 +51,11 @@ function buildOption(
 
   const label = document.createElement('span');
   label.className = 'generate-picker__label';
-  const l1 = document.createElement('span');
-  l1.textContent = line1;
-  const l2 = document.createElement('span');
-  l2.textContent = line2;
-  label.append(l1, l2);
+  for (const text of lines) {
+    const line = document.createElement('span');
+    line.textContent = text;
+    label.appendChild(line);
+  }
 
   btn.append(icon, label);
   return btn;
@@ -84,18 +84,13 @@ export function mountGeneratePicker(
   dialog.setAttribute('aria-modal', 'true');
   dialog.setAttribute('aria-label', 'Choose how to generate the summary');
 
-  const localBtn = buildOption(
-    'local',
-    ollamaIconSvg,
-    'Generate locally',
-    `with ${opts.localName ?? 'Ollama'}`,
-  );
-  const remoteBtn = buildOption(
-    'remote',
-    cerebrasIconSvg,
-    'Generate remotely',
-    `with ${opts.remoteName ?? 'Cerebras'}`,
-  );
+  // Line breaks match the v2 mock exactly (Figma 252:951).
+  const ollamaBtn = buildOption('ollama', ollamaIconSvg, ['Generate locally', 'with Ollama']);
+  const customLocalBtn = buildOption('custom-local', customLocalIconSvg, [
+    'Generate on a local',
+    'custom server',
+  ]);
+  const remoteBtn = buildOption('remote', remoteIconSvg, ['Generate on a', 'remote endpoint']);
 
   const closeBtn = document.createElement('button');
   closeBtn.type = 'button';
@@ -103,7 +98,7 @@ export function mountGeneratePicker(
   closeBtn.setAttribute('aria-label', 'Close');
   closeBtn.innerHTML = closeIconSvg;
 
-  dialog.append(localBtn, remoteBtn, closeBtn);
+  dialog.append(ollamaBtn, customLocalBtn, remoteBtn, closeBtn);
   overlay.appendChild(dialog);
 
   const handleClick = (event: MouseEvent): void => {
@@ -123,7 +118,7 @@ export function mountGeneratePicker(
 
   // Escape dismisses; Tab cycles within the dialog (focus must not escape
   // into the dimmed document behind the overlay).
-  const focusables = [localBtn, remoteBtn, closeBtn];
+  const focusables = [ollamaBtn, customLocalBtn, remoteBtn, closeBtn];
   const handleKeydown = (event: KeyboardEvent): void => {
     if (event.key === 'Escape') {
       event.preventDefault();
@@ -140,7 +135,7 @@ export function mountGeneratePicker(
   overlay.addEventListener('keydown', handleKeydown);
 
   root.appendChild(overlay);
-  localBtn.focus();
+  ollamaBtn.focus();
 
   let torndown = false;
   return {
