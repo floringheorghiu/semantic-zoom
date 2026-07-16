@@ -60,4 +60,23 @@ mod tests {
         delete_api_key().expect("delete_api_key failed");
         assert!(!get_api_key_status(), "expected status false after delete");
     }
+
+    /// Per-message test for the missing-key path: this exact string is what
+    /// `llm_complete` surfaces to the UI when a remote provider is selected
+    /// with no key saved, so it is user-facing copy, not an internal detail.
+    #[test]
+    fn missing_key_yields_the_no_api_key_configured_message() {
+        let _guard = KEYCHAIN_LOCK.lock().unwrap();
+
+        // Preserve any real key so running the suite never clobbers one.
+        let saved = get_api_key().ok();
+        let _ = delete_api_key();
+
+        let err = get_api_key().expect_err("expected an error with no key saved");
+        assert_eq!(err, "No API key configured");
+
+        if let Some(key) = saved {
+            save_api_key(key).expect("failed to restore pre-existing key");
+        }
+    }
 }
