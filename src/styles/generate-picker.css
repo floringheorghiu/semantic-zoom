@@ -1,7 +1,7 @@
-/* Generate picker modal (Figma 202:1232 "Modal-LLM-selection", in-context
-   202:1236). The one intentional modal in the app — a user-initiated
-   local-vs-remote choice at the §8.5 trust boundary, not a status surface
-   (status-badge.css's non-modal rule is about feedback, which this is not).
+/* Generate picker modal (Figma 252:951 "Modal-LLM-selection-v2"). The one
+   intentional modal in the app — a user-initiated provider choice at the
+   §8.5 trust boundary, not a status surface (status-badge.css's non-modal
+   rule is about feedback, which this is not).
    Entry fades `opacity` only (D1: nothing non-compositor ever animates). */
 
 .generate-picker__overlay {
@@ -38,9 +38,10 @@
   background: var(--sz-bg);
   border-radius: 8px;
   box-shadow: 0 4px 4px rgba(0, 0, 0, 0.25);
-  /* The Figma exports color their paths via var(--fill-0, black); routing
-     that through the ink token keeps the icons legible on the dark theme. */
-  --fill-0: var(--sz-ink);
+  /* The Figma exports color their paths via var(--fill-0, #8080FF); routing
+     that through the accent token keeps the icons on-theme in both light and
+     dark mode instead of hardcoding the mock's hex. */
+  --fill-0: var(--sz-accent);
 }
 
 .generate-picker__option {
@@ -70,8 +71,8 @@
 
 .generate-picker__icon {
   display: block;
-  width: 31px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
 }
 
 .generate-picker__icon svg {
