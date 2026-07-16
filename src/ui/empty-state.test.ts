@@ -1,30 +1,49 @@
 import { test, expect, vi } from 'vitest';
 import { mountEmptyState } from './empty-state';
 
-test('renders the two action rows, with App Settings disabled', () => {
+const noopHandlers = { onOpen: () => {}, onSelectRecent: () => {}, onSettings: () => {} };
+
+test('renders the two action rows, both enabled', () => {
   const root = document.createElement('div');
-  mountEmptyState(root, { recentFiles: [], onOpen: () => {}, onSelectRecent: () => {} });
+  mountEmptyState(root, { recentFiles: [], ...noopHandlers });
 
   const actions = root.querySelectorAll<HTMLButtonElement>('.empty-state__action');
   expect(actions).toHaveLength(2);
   expect(actions[0].textContent).toContain('Open a Markdown Document');
   expect(actions[0].disabled).toBe(false);
   expect(actions[1].textContent).toContain('App Settings');
-  expect(actions[1].disabled).toBe(true);
+  expect(actions[1].disabled).toBe(false);
+});
+
+test('the App Settings row shows the real menu accelerator (⌘,), not ⌘S', () => {
+  const root = document.createElement('div');
+  mountEmptyState(root, { recentFiles: [], ...noopHandlers });
+
+  const settingsRow = root.querySelectorAll<HTMLButtonElement>('.empty-state__action')[1];
+  expect(settingsRow.querySelector('.empty-state__action-key')?.textContent).toBe('⌘,');
 });
 
 test('clicking "Open a Markdown Document" calls onOpen', () => {
   const root = document.createElement('div');
   const onOpen = vi.fn();
-  mountEmptyState(root, { recentFiles: [], onOpen, onSelectRecent: () => {} });
+  mountEmptyState(root, { recentFiles: [], ...noopHandlers, onOpen });
 
   root.querySelector<HTMLButtonElement>('.empty-state__action')!.click();
   expect(onOpen).toHaveBeenCalledOnce();
 });
 
+test('clicking "App Settings" calls onSettings', () => {
+  const root = document.createElement('div');
+  const onSettings = vi.fn();
+  mountEmptyState(root, { recentFiles: [], ...noopHandlers, onSettings });
+
+  root.querySelectorAll<HTMLButtonElement>('.empty-state__action')[1].click();
+  expect(onSettings).toHaveBeenCalledOnce();
+});
+
 test('omits the Recent Files section entirely when there is no history', () => {
   const root = document.createElement('div');
-  mountEmptyState(root, { recentFiles: [], onOpen: () => {}, onSelectRecent: () => {} });
+  mountEmptyState(root, { recentFiles: [], ...noopHandlers });
   expect(root.querySelector('.empty-state__recent')).toBeNull();
 });
 
@@ -36,7 +55,7 @@ test('renders a row per recent file and routes clicks to onSelectRecent', () => 
       { path: '/a/zoom_test.md', name: 'zoom_test.md' },
       { path: '/a/CLAUDE.md', name: 'CLAUDE.md' },
     ],
-    onOpen: () => {},
+    ...noopHandlers,
     onSelectRecent,
   });
 
@@ -53,8 +72,7 @@ test('renders the logo, and a footer with all six shortcut hints plus the versio
   const root = document.createElement('div');
   mountEmptyState(root, {
     recentFiles: [],
-    onOpen: () => {},
-    onSelectRecent: () => {},
+    ...noopHandlers,
     version: '9.9.9',
   });
 
@@ -69,14 +87,14 @@ test('renders the logo, and a footer with all six shortcut hints plus the versio
 
 test('omits the version chip when no version is provided', () => {
   const root = document.createElement('div');
-  mountEmptyState(root, { recentFiles: [], onOpen: () => {}, onSelectRecent: () => {} });
+  mountEmptyState(root, { recentFiles: [], ...noopHandlers });
   expect(root.querySelector('.empty-state__footer-version')).toBeNull();
   expect(root.querySelectorAll('.empty-state__footer-hint')).toHaveLength(6);
 });
 
 test('teardown removes the container from the DOM', () => {
   const root = document.createElement('div');
-  const handle = mountEmptyState(root, { recentFiles: [], onOpen: () => {}, onSelectRecent: () => {} });
+  const handle = mountEmptyState(root, { recentFiles: [], ...noopHandlers });
   expect(root.querySelector('.empty-state')).not.toBeNull();
   handle.teardown();
   expect(root.querySelector('.empty-state')).toBeNull();
