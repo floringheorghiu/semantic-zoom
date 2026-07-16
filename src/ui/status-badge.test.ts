@@ -88,6 +88,53 @@ test('calling flashUpdated twice keeps a single pill and resets the 1500ms timer
   badge.teardown();
 });
 
+test('the pill is permanent: native shows "Zoomable" with a green dot, hidden only when no doc', () => {
+  const root = document.createElement('div');
+  document.body.appendChild(root);
+  const badge = mountStatusBadge(root);
+  const note = root.querySelector<HTMLElement>('.status-badge__note')!;
+  const dot = root.querySelector<HTMLElement>('.status-badge__dot')!;
+
+  // Before any document: hidden.
+  expect(note.style.display).toBe('none');
+
+  badge.setStatus('native');
+  expect(note.style.display).not.toBe('none');
+  expect(note.dataset.status).toBe('native');
+  expect(note.textContent).toBe('Zoomable');
+  expect(dot.style.background).toContain('--sz-ok');
+
+  badge.setStatus('none');
+  expect(note.style.display).toBe('none');
+
+  badge.teardown();
+});
+
+test('untagged dot is calm gray by default, amber when the last recorded run failed', () => {
+  const root = document.createElement('div');
+  document.body.appendChild(root);
+  const badge = mountStatusBadge(root);
+  const dot = root.querySelector<HTMLElement>('.status-badge__dot')!;
+
+  badge.setStatus('untagged');
+  expect(dot.style.background).toContain('--sz-muted');
+
+  badge.setStatus('untagged', undefined, { lastRunFailed: true });
+  expect(dot.style.background).toContain('--sz-warn');
+  // Label text stays calm either way — the dot alone carries the signal.
+  expect(root.querySelector('.status-badge__note')!.textContent).toBe('No summary layer');
+
+  badge.teardown();
+});
+
+test('the anchor handle points at the pill element (tooltip hover target)', () => {
+  const root = document.createElement('div');
+  document.body.appendChild(root);
+  const badge = mountStatusBadge(root);
+  expect(badge.anchor).toBe(root.querySelector('.status-badge__note'));
+  badge.teardown();
+});
+
 test('teardown removes the mounted element', () => {
   const root = document.createElement('div');
   document.body.appendChild(root);

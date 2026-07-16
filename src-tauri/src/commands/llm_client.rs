@@ -64,6 +64,32 @@ struct ChatRequest<'a> {
 #[derive(Debug, Deserialize)]
 struct ChatResponse {
     choices: Vec<ChatChoice>,
+    #[serde(default)]
+    usage: Option<ChatUsage>,
+}
+
+/// The OpenAI-compatible `usage` block. Providers send snake_case
+/// (`prompt_tokens`); we re-serialize camelCase for the frontend and the
+/// generation-history store, and the `alias` keeps deserialization
+/// accepting both shapes. Every field optional — the schema allows
+/// providers to omit any of it, and a missing count must never fail a
+/// generation that otherwise succeeded.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatUsage {
+    #[serde(default, alias = "prompt_tokens")]
+    pub prompt_tokens: Option<u64>,
+    #[serde(default, alias = "completion_tokens")]
+    pub completion_tokens: Option<u64>,
+}
+
+/// What a completed LLM call returns to callers (and, serialized, to the
+/// frontend): the text plus whatever usage accounting the provider reported.
+#[derive(Debug, Clone, Serialize)]
+pub struct Completion {
+    pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<ChatUsage>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -87,7 +113,7 @@ pub async fn complete(
     user_message: &str,
     temperature: f32,
     json_mode: bool,
-) -> Result<String, String> {
+) -> Result<Completion, String> {
     if config.base_url.trim().is_empty() {
         return Err("No base URL configured for this provider — set one in Settings".to_string());
     }
@@ -124,11 +150,12 @@ pub async fn complete(
         .await
         .map_err(|e| format!("provider response did not match the expected chat-completions shape: {e}"))?;
 
+    let usage = parsed.usage;
     parsed
         .choices
         .into_iter()
         .next()
-        .map(|c| c.message.content)
+        .map(|c| Completion { content: c.message.content, usage })
         .ok_or_else(|| "provider returned zero choices".to_string())
 }
 
@@ -176,7 +203,7 @@ pub async fn complete_cancellable(
     temperature: f32,
     json_mode: bool,
     cancel: &LlmCancelState,
-) -> Result<String, String> {
+) -> Result<Completion, String> {
     let token = cancel.begin();
     tokio::select! {
         res = complete(client, config, api_key, system_prompt, user_message, temperature, json_mode) => res,
@@ -192,7 +219,7 @@ pub async fn llm_complete(
     user_message: String,
     json_mode: Option<bool>,
     temperature: Option<f32>,
-) -> Result<String, String> {
+) -> Result<Completion, String> {
     let config = crate::commands::provider_config::get_provider_config(app.clone())?;
     let api_key = if config.kind.needs_key() {
         Some(crate::commands::secrets::get_api_key()?)
@@ -284,7 +311,7 @@ mod tests {
         let result = complete(&client, &config, Some("test-key-123"), "sys", "user", 0.0, false).await;
 
         mock.assert_async().await;
-        assert_eq!(result.unwrap(), "hello from mock");
+        assert_eq!(result.unwrap().content, "hello from mock");
     }
 
     #[tokio::test]
@@ -306,7 +333,47 @@ mod tests {
         let result = complete(&client, &config, None, "sys", "user", 0.0, false).await;
 
         mock.assert_async().await;
-        assert_eq!(result.unwrap(), "hello from mock");
+        assert_eq!(result.unwrap().content, "hello from mock");
+    }
+
+    #[tokio::test]
+    async fn usage_block_is_parsed_when_present_and_none_when_absent() {
+        let mut server = mockito::Server::new_async().await;
+        server
+            .mock("POST", "/chat/completions")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "choices": [{ "message": { "role": "assistant", "content": "hi" } }],
+                    "usage": { "prompt_tokens": 1234, "completion_tokens": 567, "total_tokens": 1801 }
+                })
+                .to_string(),
+            )
+            .expect(1)
+            .create_async()
+            .await;
+
+        let client = reqwest::Client::new();
+        let config = config_for(server.url());
+        let completion =
+            complete(&client, &config, None, "sys", "user", 0.0, false).await.unwrap();
+        let usage = completion.usage.expect("usage must be parsed when the provider sends it");
+        assert_eq!(usage.prompt_tokens, Some(1234));
+        assert_eq!(usage.completion_tokens, Some(567));
+
+        // ok_body() has no usage block — must come back None, never an error.
+        server
+            .mock("POST", "/chat/completions")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(ok_body())
+            .expect(1)
+            .create_async()
+            .await;
+        let completion =
+            complete(&client, &config, None, "sys", "user", 0.0, false).await.unwrap();
+        assert!(completion.usage.is_none());
     }
 
     #[tokio::test]
