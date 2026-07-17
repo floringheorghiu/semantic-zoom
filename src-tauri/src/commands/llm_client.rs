@@ -222,7 +222,7 @@ pub async fn llm_complete(
 ) -> Result<Completion, String> {
     let config = crate::commands::provider_config::get_provider_config(app.clone())?;
     let api_key = if config.kind.needs_key() {
-        Some(crate::commands::secrets::get_api_key()?)
+        Some(crate::commands::secrets::get_api_key(config.provider)?)
     } else {
         None
     };
@@ -262,7 +262,7 @@ pub fn cancel_llm_generation(state: tauri::State<'_, LlmCancelState>) {
 pub async fn probe_provider(app: tauri::AppHandle) -> Result<bool, String> {
     let config = crate::commands::provider_config::get_provider_config(app.clone())?;
     let api_key = if config.kind.needs_key() {
-        match crate::commands::secrets::get_api_key() {
+        match crate::commands::secrets::get_api_key(config.provider) {
             Ok(k) => Some(k),
             Err(_) => return Ok(false),
         }
@@ -281,10 +281,10 @@ pub async fn probe_provider(app: tauri::AppHandle) -> Result<bool, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::provider_config::ProviderKind;
+    use crate::commands::provider_config::{Provider, ProviderKind};
 
     fn config_for(base_url: String) -> ProviderConfig {
-        ProviderConfig { kind: ProviderKind::Remote, base_url, model: "test-model".to_string() }
+        ProviderConfig { kind: ProviderKind::Remote, provider: Provider::Cerebras, base_url, model: "test-model".to_string() }
     }
 
     fn ok_body() -> String {
