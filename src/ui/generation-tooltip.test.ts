@@ -251,7 +251,8 @@ test('tagged doc with runs: run list plus the Remove button, no empty state', ()
   const card = document.querySelector('.generation-tooltip')!;
   expect(card.querySelectorAll('.generation-tooltip__entry')).toHaveLength(1);
   expect(card.textContent).not.toContain('No generation history for this file');
-  expect(card.querySelector('.generation-tooltip__remove')).not.toBeNull();
+  // The action sits on TOP of the history stack, above the newest entry.
+  expect(card.firstElementChild!.className).toBe('generation-tooltip__remove');
 
   handle.teardown();
 });

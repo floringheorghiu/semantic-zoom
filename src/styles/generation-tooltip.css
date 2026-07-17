@@ -77,15 +77,16 @@
   color: var(--sz-muted);
 }
 
-/* The destructive action lives BELOW the history, separated by a hairline;
-   red text, no fill — the native confirmation dialog is the real gate. */
+/* The destructive action sits on TOP of the history stack, separated by a
+   hairline; red text, no fill — the native confirmation dialog is the real
+   gate. */
 .generation-tooltip__remove {
   display: block;
-  margin-top: 16px;
-  padding: 6px 0 0;
+  margin-bottom: 16px;
+  padding: 0 0 6px;
   width: 100%;
   border: none;
-  border-top: 1px solid var(--sz-hairline);
+  border-bottom: 1px solid var(--sz-hairline);
   background: none;
   color: #c0392b;
   font: inherit;
