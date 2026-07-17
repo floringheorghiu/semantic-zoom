@@ -3,7 +3,7 @@
 // engine/ and ui/ modules (spec §6, §3.3).
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
-import { open } from '@tauri-apps/plugin-dialog';
+import { ask, open } from '@tauri-apps/plugin-dialog';
 import { Menu, Submenu, MenuItem, PredefinedMenuItem } from '@tauri-apps/api/menu';
 
 import { buildIndex, type ZoomLevel, type LookupTable, type ResolvedIndex } from './engine/schema';
@@ -448,6 +448,55 @@ const FAILURE_TOAST_MS = 6000;
 function shortenForToast(message: string, maxLen = 80): string {
   const firstSentence = message.split(/(?<=[.!?])\s/)[0] ?? message;
   return firstSentence.length > maxLen ? `${firstSentence.slice(0, maxLen - 1)}…` : firstSentence;
+}
+
+/**
+ * "Remove zoom layers…" from the history card (spec
+ * docs/superpowers/specs/2026-07-17-remove-zoom-payload-design.md): gate
+ * behind a NATIVE confirmation dialog, then have Rust strip the payload
+ * block (remove_payload mirrors write_payload — same scanner as
+ * load_document, same atomic write). The watcher deliberately ignores the
+ * rewrite (raw-content hash unchanged), so the reload here is explicit.
+ * Generation history is a sidecar, never part of the file — it survives,
+ * and the removal itself lands in it as a `removed` event.
+ */
+async function handleRemoveZoomLayers(): Promise<void> {
+  if (currentPath === null || currentResult?.kind !== 'native') return;
+  const path = currentPath;
+
+  const confirmed = await ask(
+    'The generated summaries will be deleted from the file. ' +
+      'Your markdown text and the generation history are untouched, ' +
+      'and you can generate new zoom layers at any time.',
+    { title: 'Remove zoom layers?', kind: 'warning', okLabel: 'Remove', cancelLabel: 'Cancel' },
+  );
+  if (!confirmed) return;
+  // The dialog was open for an arbitrary while — the doc may have closed
+  // or changed underneath it. Re-check before touching disk.
+  if (currentPath !== path) return;
+
+  try {
+    await invoke('remove_payload', { path, removedAt: new Date().toISOString() });
+  } catch (err) {
+    console.warn('remove_payload failed:', err);
+    statusBadge?.flashUpdated(
+      `Couldn't remove zoom layers — ${shortenForToast(String(err))}`,
+      FAILURE_TOAST_MS,
+    );
+    return;
+  }
+
+  // NoPayload and Removed converge here on purpose: either way the file has
+  // no payload now, and the view must say so.
+  await refreshGenerationHistory(path);
+  try {
+    const result = await invoke<LoadResultDTO>('load_document', { path });
+    actions$.next(docLoaded(result));
+    applyResult(result);
+  } catch (err) {
+    console.warn('reload after remove_payload failed:', err);
+  }
+  statusBadge?.flashUpdated('Zoom layers removed', TOAST_MS);
 }
 
 /**
@@ -1374,6 +1423,10 @@ window.addEventListener('DOMContentLoaded', () => {
   generationTooltip = mountGenerationTooltip(document.body, {
     anchor: statusBadge.anchor,
     getRuns: () => generationRuns,
+    // 'native' only: a corrupt payload isn't safely removable (the scanner
+    // can't vouch for its bounds), so corrupt docs don't offer the action.
+    isTagged: () => currentResult?.kind === 'native',
+    onRemoveRequest: () => void handleRemoveZoomLayers(),
   });
 
   // Mount the two-frame zoom-transition effect once (spec §2.5). Subsequent

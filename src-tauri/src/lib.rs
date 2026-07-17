@@ -28,6 +28,7 @@ pub fn run() {
             commands::provider_config::get_saved_provider_config,
             commands::provider_config::get_saved_provider_profile,
             commands::window::open_settings_window,
+            commands::remove_payload::remove_payload,
             commands::generation_history::get_generation_history,
             commands::generation_history::append_generation_run,
             commands::llm_client::llm_complete,

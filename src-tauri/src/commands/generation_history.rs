@@ -30,6 +30,10 @@ const MAX_RUNS_PER_DOC: usize = 20;
 pub enum RunOutcome {
     Succeeded,
     Failed,
+    /// The payload was removed from the document (remove_payload command).
+    /// Not a generation run — provider fields are empty, version reports
+    /// the version that existed at removal time.
+    Removed,
 }
 
 /// One completed generation run. Cancelled runs are never recorded — the
@@ -111,7 +115,7 @@ fn hash_file(doc_path: &str) -> Option<String> {
 /// two byte-identical documents with histories are ambiguous, and either
 /// answer is defensible). A hit migrates the record to the new path so the
 /// fallback never has to fire twice.
-fn history_for(dir: &Path, doc_path: &str) -> Vec<GenerationRun> {
+pub(crate) fn history_for(dir: &Path, doc_path: &str) -> Vec<GenerationRun> {
     let mut store = read_store(dir);
     if let Some(doc) = store.get(doc_path) {
         return doc.runs.clone();
@@ -140,7 +144,11 @@ fn history_for(dir: &Path, doc_path: &str) -> Vec<GenerationRun> {
 /// the file as it exists NOW (for successes that's post-write_payload), cap
 /// at MAX_RUNS_PER_DOC, persist. Returns the updated list — the frontend
 /// re-renders from what was actually stored.
-fn append_run(dir: &Path, doc_path: &str, mut run: GenerationRun) -> Result<Vec<GenerationRun>, String> {
+pub(crate) fn append_run(
+    dir: &Path,
+    doc_path: &str,
+    mut run: GenerationRun,
+) -> Result<Vec<GenerationRun>, String> {
     let mut store = read_store(dir);
     let doc = store.entry(doc_path.to_string()).or_default();
 
@@ -148,7 +156,7 @@ fn append_run(dir: &Path, doc_path: &str, mut run: GenerationRun) -> Result<Vec<
         doc.runs.iter().filter(|r| r.outcome == RunOutcome::Succeeded).count() as u32;
     run.version = match run.outcome {
         RunOutcome::Succeeded => prior_successes + 1,
-        RunOutcome::Failed => prior_successes,
+        RunOutcome::Failed | RunOutcome::Removed => prior_successes,
     };
 
     doc.runs.push(run);
