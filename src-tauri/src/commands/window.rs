@@ -12,7 +12,7 @@ pub fn open_settings_window(app: AppHandle) -> Result<(), String> {
     }
     WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App("settings.html".into()))
         .title("Settings")
-        .inner_size(420.0, 280.0)
+        .inner_size(460.0, 610.0)
         .resizable(false)
         .build()
         .map(|_| ())
