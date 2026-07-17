@@ -24,7 +24,7 @@
         background: color-mix(in srgb, currentColor 4%, transparent);
         color: inherit;
       }
-      #key-row[hidden] { display: none; }
+      #key-row[hidden], #model-custom-row[hidden] { display: none; }
       #status-line { font-size: 12px; opacity: 0.75; min-height: 1.2em; }
       .row { display: flex; gap: 8px; }
       button {
@@ -39,19 +39,27 @@
     </style>
   </head>
   <body>
-    <label for="provider">Provider
-      <select id="provider">
+    <label for="engine">Generation Engine
+      <select id="engine">
         <option value="remote">Remote endpoint</option>
-        <option value="ollama">Ollama (local)</option>
         <option value="custom-local">Custom local server</option>
+        <option value="ollama">Ollama (local)</option>
       </select>
+    </label>
+    <label for="provider">Provider
+      <select id="provider"></select>
     </label>
     <label for="base-url">Base URL
       <input id="base-url" type="text" placeholder="http://localhost:11434/v1" />
     </label>
     <label for="model">Model
-      <input id="model" type="text" placeholder="gemma4:latest" />
+      <select id="model"></select>
     </label>
+    <div id="model-custom-row" hidden>
+      <label for="model-custom">Custom model name
+        <input id="model-custom" type="text" placeholder="model-name" />
+      </label>
+    </div>
     <div id="key-row" hidden>
       <label for="api-key">API key
         <input id="api-key" type="password" autocomplete="off" placeholder="sk-…" />
