@@ -3,10 +3,36 @@
 // The key must never exist in JS state longer than the instant it's typed.
 // `get_api_key_status` returns a bool ONLY — the key string never crosses
 // into a #[tauri::command] return type, so it never reaches the webview.
+//
+// One Keychain entry PER remote provider (cerebras/xiaomi/openrouter), so
+// switching providers never overwrites another provider's key. Cerebras
+// keeps the original service name: pre-provider installs saved their key
+// there and were Cerebras-validated, so the existing entry keeps working
+// with zero migration.
 
+use crate::commands::provider_config::Provider;
 use keyring::Entry;
 
 const SERVICE: &str = "com.semantic-zoom.llm-api-key";
+
+fn service_for_provider(provider: Provider) -> String {
+    match provider {
+        // Legacy name — the pre-provider entry, claimed by Cerebras.
+        Provider::Cerebras => SERVICE.to_string(),
+        // Local providers never call this (needs_key() is false for their
+        // kinds), but a total match beats a panic if one ever does.
+        p => {
+            let name = match p {
+                Provider::Cerebras => unreachable!(),
+                Provider::Xiaomi => "xiaomi",
+                Provider::Openrouter => "openrouter",
+                Provider::LlamaCpp => "llama-cpp",
+                Provider::Ollama => "ollama",
+            };
+            format!("{SERVICE}.{name}")
+        }
+    }
+}
 
 // Service-parameterized internals so tests can exercise the identical
 // keyring plumbing against a THROWAWAY service name. Tests must never touch
@@ -30,26 +56,33 @@ fn delete_for(service: &str) -> Result<(), String> {
     entry_for(service)?.delete_credential().map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-pub fn save_api_key(key: String) -> Result<(), String> {
-    save_for(SERVICE, &key)
+/// `provider` is optional on all three commands so pre-provider callers
+/// (and the picker flow, which never touches keys) keep working; a missing
+/// provider means the legacy Cerebras slot.
+fn resolve_service(provider: Option<Provider>) -> String {
+    service_for_provider(provider.unwrap_or(Provider::Cerebras))
 }
 
 #[tauri::command]
-pub fn get_api_key_status() -> bool {
-    status_for(SERVICE)
+pub fn save_api_key(key: String, provider: Option<Provider>) -> Result<(), String> {
+    save_for(&resolve_service(provider), &key)
 }
 
 #[tauri::command]
-pub fn delete_api_key() -> Result<(), String> {
-    delete_for(SERVICE)
+pub fn get_api_key_status(provider: Option<Provider>) -> bool {
+    status_for(&resolve_service(provider))
+}
+
+#[tauri::command]
+pub fn delete_api_key(provider: Option<Provider>) -> Result<(), String> {
+    delete_for(&resolve_service(provider))
 }
 
 /// Rust-internal accessor for the raw key — used by T5's `llm_complete`
 /// command to build the Authorization header. Never exposed as a
 /// #[tauri::command]; the key must not have a JS-callable path back out.
-pub(crate) fn get_api_key() -> Result<String, String> {
-    get_key_for(SERVICE)
+pub(crate) fn get_api_key(provider: Provider) -> Result<String, String> {
+    get_key_for(&service_for_provider(provider))
 }
 
 fn get_key_for(service: &str) -> Result<String, String> {
@@ -96,6 +129,28 @@ mod tests {
     #[test]
     fn production_service_name_is_never_used_by_tests() {
         assert_ne!(TEST_SERVICE, SERVICE);
+        for p in [
+            Provider::Cerebras,
+            Provider::Xiaomi,
+            Provider::Openrouter,
+        ] {
+            assert_ne!(TEST_SERVICE, service_for_provider(p));
+        }
+    }
+
+    #[test]
+    fn cerebras_claims_the_legacy_service_name() {
+        // Existing installs saved their key under the bare service name
+        // while validated against Cerebras — that entry must stay theirs.
+        assert_eq!(service_for_provider(Provider::Cerebras), SERVICE);
+        assert_eq!(
+            service_for_provider(Provider::Xiaomi),
+            "com.semantic-zoom.llm-api-key.xiaomi"
+        );
+        assert_eq!(
+            service_for_provider(Provider::Openrouter),
+            "com.semantic-zoom.llm-api-key.openrouter"
+        );
     }
 
     /// Per-message test for the missing-key path: this exact string is what

@@ -135,6 +135,7 @@ function availableLevels(): ZoomLevel[] {
 /** Mirrors src-tauri/src/commands/provider_config.rs's ProviderConfig. */
 interface ProviderConfigDTO {
   kind: 'remote' | 'ollama' | 'custom-local';
+  provider: 'cerebras' | 'xiaomi' | 'openrouter' | 'llama-cpp' | 'ollama';
   base_url: string;
   model: string;
 }
@@ -150,7 +151,9 @@ async function refreshProviderStatus(): Promise<void> {
   try {
     const config = await invoke<ProviderConfigDTO>('get_provider_config');
     const needsKey = config.kind === 'remote';
-    const hasKey = needsKey ? await invoke<boolean>('get_api_key_status') : true;
+    const hasKey = needsKey
+      ? await invoke<boolean>('get_api_key_status', { provider: config.provider })
+      : true;
     const configured = config.base_url.trim() !== '' && hasKey;
     providerConfigured = configured;
     providerGenerateTooltip = needsKey
@@ -302,7 +305,10 @@ async function pickProviderAndGenerate(choice: GeneratePickerChoice): Promise<vo
     // Same usability gate as refreshProviderStatus: any kind needs an
     // endpoint; Remote additionally needs a saved key. An unusable pick
     // routes to Settings instead of failing later inside the HTTP client.
-    const hasKey = choice === 'remote' ? await invoke<boolean>('get_api_key_status') : true;
+    const hasKey =
+      choice === 'remote'
+        ? await invoke<boolean>('get_api_key_status', { provider: target.provider })
+        : true;
     if (target.base_url.trim() === '' || !hasKey) {
       statusBadge?.flashUpdated(
         choice === 'remote'
