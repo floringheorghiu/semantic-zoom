@@ -1,5 +1,6 @@
 pub mod document;
 pub mod generation_history;
+pub mod help;
 pub mod llm_client;
 pub mod provider_config;
 pub mod remove_payload;
