@@ -68,7 +68,7 @@ test('renders a row per recent file and routes clicks to onSelectRecent', () => 
   expect(onSelectRecent).toHaveBeenCalledWith('/a/CLAUDE.md');
 });
 
-test('renders the logo, and a footer with all six shortcut hints plus the version', () => {
+test('renders the logo, and a footer with all seven shortcut hints plus the version', () => {
   const root = document.createElement('div');
   mountEmptyState(root, {
     recentFiles: [],
@@ -79,9 +79,10 @@ test('renders the logo, and a footer with all six shortcut hints plus the versio
   expect(root.querySelector('.empty-state__logo svg')).not.toBeNull();
 
   const hints = root.querySelectorAll('.empty-state__footer .empty-state__footer-hint');
-  expect(hints).toHaveLength(7); // 6 shortcuts + version
+  expect(hints).toHaveLength(8); // 7 shortcuts + version
   expect(hints[0].textContent).toBe('⌘1 — raw level');
   expect(hints[3].textContent).toBe('⌘↓ — next section');
+  expect(hints[6].textContent).toBe('⌘/ — help');
   expect(root.querySelector('.empty-state__footer-version')?.textContent).toBe('v9.9.9');
 });
 
@@ -89,7 +90,7 @@ test('omits the version chip when no version is provided', () => {
   const root = document.createElement('div');
   mountEmptyState(root, { recentFiles: [], ...noopHandlers });
   expect(root.querySelector('.empty-state__footer-version')).toBeNull();
-  expect(root.querySelectorAll('.empty-state__footer-hint')).toHaveLength(6);
+  expect(root.querySelectorAll('.empty-state__footer-hint')).toHaveLength(7);
 });
 
 test('teardown removes the container from the DOM', () => {

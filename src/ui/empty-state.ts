@@ -34,6 +34,7 @@ const FOOTER_HINTS = [
   '⌘↓ — next section',
   '⌘↑ — previous section',
   '⌘W — close',
+  '⌘/ — help',
 ];
 
 function buildActionRow(
