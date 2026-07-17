@@ -82,7 +82,7 @@ test('renders the logo, and a footer with all seven shortcut hints plus the vers
   expect(hints).toHaveLength(8); // 7 shortcuts + version
   expect(hints[0].textContent).toBe('⌘1 — raw level');
   expect(hints[3].textContent).toBe('⌘↓ — next section');
-  expect(hints[6].textContent).toBe('⌘? — help');
+  expect(hints[6].textContent).toBe('⌘/ — help');
   expect(root.querySelector('.empty-state__footer-version')?.textContent).toBe('v9.9.9');
 });
 
