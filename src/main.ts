@@ -1271,7 +1271,10 @@ async function installMenu(): Promise<void> {
       await MenuItem.new({
         id: 'open-help',
         text: 'Semantic Zoom Help',
-        accelerator: 'CmdOrCtrl+Shift+/', // rendered ⌘? on macOS
+        // ⌘/ — deliberately NOT the ⌘? convention: "?" itself needs Shift,
+        // so ⌘? is really a three-key chord. ⌘/ works in one motion; the
+        // DOM handler below still accepts ⌘⇧/ (i.e. literal ⌘?) as well.
+        accelerator: 'CmdOrCtrl+/',
         action: () => void openHelp(),
       }),
     ],
@@ -1316,15 +1319,15 @@ function installKeyboardShortcuts(): void {
     e.preventDefault();
   });
 
-  // ⌘? help, handled in the DOM as well as via the Help-menu accelerator —
-  // same defense as ⌘↓/⌘↑ below: WebKit gets first shot at key equivalents
-  // and can consume them before the menu ever fires (2026-07-09 finding).
-  // preventDefault() marks the event page-handled so the two paths can
-  // never both fire for one press.
+  // ⌘/ help (⌘⇧/, i.e. literal ⌘?, accepted too), handled in the DOM as
+  // well as via the Help-menu accelerator — same defense as ⌘↓/⌘↑ below:
+  // WebKit gets first shot at key equivalents and can consume them before
+  // the menu ever fires (2026-07-09 finding). preventDefault() marks the
+  // event page-handled so the two paths can never both fire for one press.
   window.addEventListener('keydown', (e) => {
-    if (!e.metaKey || e.ctrlKey || e.altKey || !e.shiftKey) return;
+    if (!e.metaKey || e.ctrlKey || e.altKey) return;
     if (inEditable(e.target)) return;
-    if (e.key === '?' || e.key === '/') {
+    if (e.key === '/' || e.key === '?') {
       e.preventDefault();
       void openHelp();
     }
