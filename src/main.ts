@@ -1139,6 +1139,26 @@ export async function openFile(path: string): Promise<void> {
   }
 }
 
+/**
+ * Open the bundled zoomable help file (spec 2026-07-17-zoomable-help-file):
+ * Rust copies the read-only bundled template to a writable location —
+ * ALWAYS overwriting, so every ⌘? yields a pristine demo no matter what the
+ * user did to the last copy (removed its layers, regenerated, edited) — and
+ * the returned path goes through the perfectly ordinary openFile flow.
+ */
+async function openHelp(): Promise<void> {
+  try {
+    const path = await invoke<string>('install_help_file');
+    await openFile(path);
+  } catch (err) {
+    console.warn('install_help_file failed:', err);
+    statusBadge?.flashUpdated(
+      `Couldn't open help — ${shortenForToast(String(err))}`,
+      FAILURE_TOAST_MS,
+    );
+  }
+}
+
 /** Prompt for a markdown file and open it. Shared by button, menu, shortcut. */
 async function promptOpen(): Promise<void> {
   const selected = await open({
@@ -1245,7 +1265,22 @@ async function installMenu(): Promise<void> {
     ],
   });
 
-  const menu = await Menu.new({ items: [appMenu, fileMenu, editMenu, viewMenu, windowMenu] });
+  const helpMenu = await Submenu.new({
+    text: 'Help',
+    items: [
+      await MenuItem.new({
+        id: 'open-help',
+        text: 'Semantic Zoom Help',
+        // ⌘/ — deliberately NOT the ⌘? convention: "?" itself needs Shift,
+        // so ⌘? is really a three-key chord. ⌘/ works in one motion; the
+        // DOM handler below still accepts ⌘⇧/ (i.e. literal ⌘?) as well.
+        accelerator: 'CmdOrCtrl+/',
+        action: () => void openHelp(),
+      }),
+    ],
+  });
+
+  const menu = await Menu.new({ items: [appMenu, fileMenu, editMenu, viewMenu, windowMenu, helpMenu] });
   await menu.setAsAppMenu();
 
   // Register the Window submenu as NSApp.windowsMenu. Without this, AppKit
@@ -1282,6 +1317,20 @@ function installKeyboardShortcuts(): void {
       default: return;
     }
     e.preventDefault();
+  });
+
+  // ⌘/ help (⌘⇧/, i.e. literal ⌘?, accepted too), handled in the DOM as
+  // well as via the Help-menu accelerator — same defense as ⌘↓/⌘↑ below:
+  // WebKit gets first shot at key equivalents and can consume them before
+  // the menu ever fires (2026-07-09 finding). preventDefault() marks the
+  // event page-handled so the two paths can never both fire for one press.
+  window.addEventListener('keydown', (e) => {
+    if (!e.metaKey || e.ctrlKey || e.altKey) return;
+    if (inEditable(e.target)) return;
+    if (e.key === '/' || e.key === '?') {
+      e.preventDefault();
+      void openHelp();
+    }
   });
 
   // ⌘↓/⌘↑ item navigation, handled in the DOM rather than only via the View-
