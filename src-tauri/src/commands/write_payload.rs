@@ -91,7 +91,7 @@ pub fn write_payload(
 /// Write-then-rename: the target path never observes a partially-written
 /// file, even if the process is killed mid-write. The temp file lives in
 /// the SAME directory as the target so the rename is same-filesystem (atomic).
-fn write_atomically(path: &str, contents: &str) -> Result<(), String> {
+pub(crate) fn write_atomically(path: &str, contents: &str) -> Result<(), String> {
     let target = Path::new(path);
     let dir = target.parent().ok_or_else(|| format!("{path}: no parent directory"))?;
     let file_name = target
@@ -105,19 +105,26 @@ fn write_atomically(path: &str, contents: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Test-only helpers shared with remove_payload.rs's tests: build a minimal
+/// valid single-block table for a raw doc (real D6 content-addressed ids)
+/// and embed it through the REAL write_payload path — so removal tests
+/// exercise exactly the bytes generation produces, not a hand-mocked block.
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests_support {
     use super::*;
-    use std::collections::HashMap;
     use crate::parser::{MetaNode, Order, ParagraphNode, SectionNode, Span};
+    use std::collections::HashMap;
 
-    fn write_temp_md(dir: &std::path::Path, name: &str, content: &str) -> String {
-        let path = dir.join(name);
-        fs::write(&path, content).unwrap();
-        path.to_string_lossy().to_string()
+    /// Embed a valid payload into the file at `path` via write_payload.
+    /// Panics on any failure — these are test preconditions.
+    pub(crate) fn embed_payload_for_test(path: &str) {
+        let raw = fs::read_to_string(path).unwrap();
+        let (table, doc_hash) = table_for(&raw);
+        let outcome = write_payload(path.to_string(), table, doc_hash).unwrap();
+        assert_eq!(outcome, WritePayloadOutcome::Written);
     }
 
-    fn table_for(raw: &str) -> (LookupTable, String) {
+    pub(crate) fn table_for(raw: &str) -> (LookupTable, String) {
         // A single-paragraph doc — mirrors what the TS-side buildLookupTable
         // would produce for a one-block untagged file.
         let text = raw.trim_end_matches('\n');
@@ -174,6 +181,18 @@ mod tests {
             order: Order { meta: vec!["M1".to_string()], sections: vec![sid], paragraphs: vec![pid] },
         };
         (table, doc_hash)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tests_support::table_for;
+    use super::*;
+
+    fn write_temp_md(dir: &std::path::Path, name: &str, content: &str) -> String {
+        let path = dir.join(name);
+        fs::write(&path, content).unwrap();
+        path.to_string_lossy().to_string()
     }
 
     #[test]

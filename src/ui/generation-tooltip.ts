@@ -14,7 +14,7 @@
 // as of open time — no stale snapshot from mount time.
 
 export interface GenerationRun {
-  outcome: 'succeeded' | 'failed';
+  outcome: 'succeeded' | 'failed' | 'removed';
   providerKind: string;
   baseUrl: string;
   model: string;
@@ -35,8 +35,17 @@ export interface GenerationRun {
 export interface GenerationTooltipOptions {
   /** The status pill (statusBadge.anchor) — hover/focus entry point. */
   anchor: HTMLElement;
-  /** Called at open time. Empty list ⇒ the tooltip never appears. */
+  /** Called at open time. Empty list ⇒ the tooltip never appears —
+      unless `isTagged()` says the document has a payload. */
   getRuns: () => GenerationRun[];
+  /** Whether the CURRENT document carries a zoom payload. Tagged docs get
+      the card even with zero recorded runs (files tagged before history
+      tracking existed), plus the Remove action. Default: false. */
+  isTagged?: () => boolean;
+  /** Fired when the user clicks "Remove zoom layers…". main.ts owns the
+      confirmation dialog and the actual removal — this component stays
+      Tauri-free (ui/ boundary). */
+  onRemoveRequest?: () => void;
 }
 
 export interface GenerationTooltipHandle {
@@ -111,6 +120,17 @@ function buildEntry(run: GenerationRun): HTMLElement {
   entry.className = 'generation-tooltip__entry';
   entry.dataset.outcome = run.outcome;
 
+  // A removal is an event, not a run — no provider ever existed for it, so
+  // the provider rows would all be "—" noise. Compact entry instead.
+  if (run.outcome === 'removed') {
+    const label = document.createElement('div');
+    label.className = 'generation-tooltip__removed-label';
+    label.textContent = 'Zoom layers removed';
+    entry.appendChild(label);
+    entry.appendChild(row('Removed:', formatCreated(run.finishedAt)));
+    return entry;
+  }
+
   entry.appendChild(row('Inference:', inferenceLabel(run)));
   entry.appendChild(row('Model:', run.model || '—'));
   entry.appendChild(row('Duration:', formatDuration(run.durationMs)));
@@ -168,7 +188,11 @@ export function mountGenerationTooltip(
   function open(): void {
     if (card !== null) return;
     const runs = opts.getRuns();
-    if (runs.length === 0) return; // fresh file: no history, no tooltip
+    const tagged = opts.isTagged?.() ?? false;
+    // Fresh untagged file: no history, no tooltip. A TAGGED doc always gets
+    // the card — even with zero runs (payload predates history tracking) —
+    // because the Remove action lives here.
+    if (runs.length === 0 && !tagged) return;
 
     // READ the anchor's geometry before any DOM write (read-then-write
     // discipline) — the card is right-aligned under the pill.
@@ -182,6 +206,27 @@ export function mountGenerationTooltip(
 
     // Newest first — the store appends chronologically.
     for (const run of [...runs].reverse()) card.appendChild(buildEntry(run));
+
+    if (runs.length === 0 && tagged) {
+      const empty = document.createElement('div');
+      empty.className = 'generation-tooltip__empty';
+      empty.textContent =
+        'No generation history for this file — its zoom layers were created ' +
+        'before history tracking, or outside this app.';
+      card.appendChild(empty);
+    }
+
+    if (tagged) {
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'generation-tooltip__remove';
+      remove.textContent = 'Remove zoom layers…';
+      remove.addEventListener('click', () => {
+        close();
+        opts.onRemoveRequest?.();
+      });
+      card.appendChild(remove);
+    }
 
     card.addEventListener('mouseenter', handleEnter);
     card.addEventListener('mouseleave', handleLeave);
