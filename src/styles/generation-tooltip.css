@@ -64,3 +64,38 @@
   display: block;
   color: var(--sz-muted);
 }
+
+/* Tagged doc with no recorded runs: explanatory empty state where the run
+   list would be (pre-history files; spec 2026-07-17). */
+.generation-tooltip__empty {
+  color: var(--sz-muted);
+}
+
+/* Compact "Zoom layers removed" event entry — an event, not a run. */
+.generation-tooltip__removed-label {
+  font-weight: 600;
+  color: var(--sz-muted);
+}
+
+/* The destructive action sits on TOP of the history stack, separated by a
+   hairline; red text, no fill — the native confirmation dialog is the real
+   gate. */
+.generation-tooltip__remove {
+  display: block;
+  margin-bottom: 16px;
+  padding: 0 0 6px;
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--sz-hairline);
+  background: none;
+  color: #c0392b;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.generation-tooltip__remove:hover,
+.generation-tooltip__remove:focus-visible {
+  text-decoration: underline;
+}

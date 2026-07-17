@@ -216,6 +216,97 @@ test('getRuns is consulted at open time — later runs appear without remounting
   handle.teardown();
 });
 
+function mountTagged(
+  runs: GenerationRun[],
+  onRemoveRequest = vi.fn(),
+): { anchor: HTMLElement; handle: GenerationTooltipHandle; onRemoveRequest: ReturnType<typeof vi.fn> } {
+  const anchor = document.createElement('span');
+  document.body.appendChild(anchor);
+  const handle = mountGenerationTooltip(document.body, {
+    anchor,
+    getRuns: () => runs,
+    isTagged: () => true,
+    onRemoveRequest,
+  });
+  return { anchor, handle, onRemoveRequest };
+}
+
+test('tagged doc with zero runs: card opens with the empty state and the Remove button', () => {
+  // Files tagged before history tracking existed (or outside this app):
+  // payload present, no run records — the card must still be reachable.
+  const { anchor, handle } = mountTagged([]);
+  hoverOpen(anchor);
+
+  const card = document.querySelector('.generation-tooltip')!;
+  expect(card.textContent).toContain('No generation history for this file');
+  expect(card.querySelector('.generation-tooltip__remove')).not.toBeNull();
+
+  handle.teardown();
+});
+
+test('tagged doc with runs: run list plus the Remove button, no empty state', () => {
+  const { anchor, handle } = mountTagged([successRun()]);
+  hoverOpen(anchor);
+
+  const card = document.querySelector('.generation-tooltip')!;
+  expect(card.querySelectorAll('.generation-tooltip__entry')).toHaveLength(1);
+  expect(card.textContent).not.toContain('No generation history for this file');
+  // The action sits on TOP of the history stack, above the newest entry.
+  expect(card.firstElementChild!.className).toBe('generation-tooltip__remove');
+
+  handle.teardown();
+});
+
+test('untagged doc with runs (after a removal): history survives, no Remove button', () => {
+  const { anchor, handle } = mount([successRun()]);
+  hoverOpen(anchor);
+
+  const card = document.querySelector('.generation-tooltip')!;
+  expect(card.querySelectorAll('.generation-tooltip__entry')).toHaveLength(1);
+  expect(card.querySelector('.generation-tooltip__remove')).toBeNull();
+
+  handle.teardown();
+});
+
+test('clicking the Remove button fires onRemoveRequest', () => {
+  const { anchor, handle, onRemoveRequest } = mountTagged([successRun()]);
+  hoverOpen(anchor);
+
+  const button = document.querySelector<HTMLButtonElement>('.generation-tooltip__remove')!;
+  button.click();
+  expect(onRemoveRequest).toHaveBeenCalledTimes(1);
+
+  handle.teardown();
+});
+
+test('a removed event renders as its own compact entry', () => {
+  const { anchor, handle } = mount([
+    successRun(),
+    {
+      ...successRun(),
+      outcome: 'removed',
+      providerKind: '',
+      baseUrl: '',
+      model: '',
+      durationMs: 0,
+      attempts: 0,
+      finishedAt: '2026-07-17T10:00:00',
+    },
+  ]);
+  hoverOpen(anchor);
+
+  const entries = document.querySelectorAll('.generation-tooltip__entry');
+  expect(entries).toHaveLength(2);
+  // Newest first: the removal is on top.
+  expect(entries[0].textContent).toContain('Zoom layers removed');
+  expect(entries[0].textContent).toContain('July 17, 2026');
+  // A removal entry has no provider rows.
+  expect(entries[0].textContent).not.toContain('Inference:');
+  expect(entries[0].textContent).not.toContain('Model:');
+
+  handle.teardown();
+});
+
 test('teardown removes the card, the listeners, and is idempotent', () => {
   const { anchor, handle } = mount([successRun()]);
   hoverOpen(anchor);
