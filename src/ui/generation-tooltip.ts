@@ -204,18 +204,8 @@ export function mountGenerationTooltip(
     card.style.top = `${rect.bottom + 8}px`;
     card.style.right = `${Math.max(8, window.innerWidth - rect.right)}px`;
 
-    // Newest first — the store appends chronologically.
-    for (const run of [...runs].reverse()) card.appendChild(buildEntry(run));
-
-    if (runs.length === 0 && tagged) {
-      const empty = document.createElement('div');
-      empty.className = 'generation-tooltip__empty';
-      empty.textContent =
-        'No generation history for this file — its zoom layers were created ' +
-        'before history tracking, or outside this app.';
-      card.appendChild(empty);
-    }
-
+    // The action sits on TOP of the stack — visible without scrolling a
+    // long history; the confirmation dialog is the real destructive gate.
     if (tagged) {
       const remove = document.createElement('button');
       remove.type = 'button';
@@ -226,6 +216,18 @@ export function mountGenerationTooltip(
         opts.onRemoveRequest?.();
       });
       card.appendChild(remove);
+    }
+
+    // Newest first — the store appends chronologically.
+    for (const run of [...runs].reverse()) card.appendChild(buildEntry(run));
+
+    if (runs.length === 0 && tagged) {
+      const empty = document.createElement('div');
+      empty.className = 'generation-tooltip__empty';
+      empty.textContent =
+        'No generation history for this file — its zoom layers were created ' +
+        'before history tracking, or outside this app.';
+      card.appendChild(empty);
     }
 
     card.addEventListener('mouseenter', handleEnter);
