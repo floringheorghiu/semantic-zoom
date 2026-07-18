@@ -6,7 +6,7 @@ import {
   resolveAnchor,
   recordPlace,
   mapAcrossLevels,
-  centerScrollTop,
+  topAlignScrollTop,
   type MountedBox,
   type MapCtx,
 } from '../engine/anchor';
@@ -238,16 +238,6 @@ export interface ZoomTransitionState {
   index: ResolvedIndex;
   /** The level currently mounted (the transition's SOURCE). */
   level: ZoomLevel;
-  caret: { paragraphId: string | null; offset: number };
-  /**
-   * False once the user has scrolled since the caret was placed. Refines
-   * spec §2.5 anchor rule 1 ("caret always wins once placed"): without this,
-   * zoom-out from L0 anchors to an arbitrarily old click regardless of where
-   * you've since scrolled to, which reads as the view jumping somewhere
-   * unrelated to your current position. Scrolling-with-no-click-since now
-   * falls through to anchor rule 2 (nearest-to-center) instead.
-   */
-  caretIsCurrent: boolean;
   lastCaretIn: Map<string, string>;
   lastAnchorIn: Map<string, string>;
 }
@@ -423,8 +413,9 @@ function measureBox(
 }
 
 /**
- * Measure where `layer` must scroll to CENTER the target node, or null if the
- * node isn't in this layer. Used by the zoom-transition settle (§2.5).
+ * Measure where `layer` must scroll to top-align the target node just below
+ * the viewport's top edge, or null if the node isn't in this layer. Used by
+ * the zoom-transition settle (§2.5, amended 2026-07-18).
  */
 export function measureTargetTop(
   layer: HTMLElement,
@@ -437,7 +428,7 @@ export function measureTargetTop(
   // --- reads (all of them, together) ---
   const clientHeight = layer.clientHeight;
   const scrollHeight = layer.scrollHeight;
-  return centerScrollTop(box, { clientHeight, scrollHeight });
+  return topAlignScrollTop(box, { clientHeight, scrollHeight });
 }
 
 /**
@@ -454,8 +445,7 @@ export function topAlignedScrollTop(layer: HTMLElement, targetId: string): numbe
   // --- reads (all of them, together) ---
   const clientHeight = layer.clientHeight;
   const scrollHeight = layer.scrollHeight;
-  const max = Math.max(0, scrollHeight - clientHeight);
-  return Math.min(Math.max(box.offsetTop - 24, 0), max);
+  return topAlignScrollTop(box, { clientHeight, scrollHeight });
 }
 
 /** Frames of scroll convergence allowed after the frame-n+1 measurement. */
@@ -523,16 +513,12 @@ function runTransition(
     const oldLayer = viewport.querySelector<HTMLElement>('.level-layer');
 
     // --- Anchor at the SOURCE level (cached offsets of the current layer). ---
-    const center = oldLayer ? oldLayer.scrollTop + oldLayer.clientHeight / 2 : 0;
+    // The anchor is the topmost actually-visible node — scroll position is
+    // the only signal (§2.5, amended 2026-07-18). The caret carries no
+    // visible UI, so it must never steer navigation the user can't see.
+    const viewportTop = oldLayer ? oldLayer.scrollTop : 0;
     const boxes = oldLayer ? mountedBoxes(oldLayer, source) : [];
-    // The caret is a LEVEL-0 concept (§2.5 rule 1) — it's only a valid anchor
-    // when zooming FROM raw. At −1/−2 fall back to nearest-center (a section/
-    // meta id); otherwise a stale caret pid would be mapped as if it were a
-    // section id (`table.sections[pid]` → undefined) and crash the transition.
-    // ALSO requires `caretIsCurrent` — see its doc comment: a caret you
-    // haven't touched since scrolling away from it is not "where you are."
-    const caretAnchor = source === 0 && st.caretIsCurrent ? st.caret.paragraphId : null;
-    const anchorId = resolveAnchor(caretAnchor, boxes, center);
+    const anchorId = resolveAnchor(boxes, viewportTop);
 
     // Remember the place we're leaving (whole ancestor chain) so zooming back
     // in feels "remembered" — see `recordPlace` (§2.5).
