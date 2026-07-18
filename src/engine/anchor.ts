@@ -20,41 +20,52 @@ export interface MountedBox {
   offsetHeight: number;
 }
 
-// centerScrollTop — transcribed VERBATIM from §2.5.
-export function centerScrollTop(
-  el: { offsetTop: number; offsetHeight: number },
-  viewport: { clientHeight: number; scrollHeight: number }
+/** Shared "just below the top edge" breathing gap (px). Also used by ⌘↓/⌘↑
+    and the content-map via viewport.ts — one convention everywhere. */
+export const TOP_GAP = 24;
+
+/** Top-alignment math (§2.5, amended 2026-07-18): land `el` TOP_GAP below
+    the viewport's top edge instead of centering it. */
+export function topAlignScrollTop(
+  el: { offsetTop: number },
+  viewport: { clientHeight: number; scrollHeight: number },
+  gap: number = TOP_GAP,
 ): number {
-  const ideal = el.offsetTop + el.offsetHeight / 2 - viewport.clientHeight / 2;
-  return Math.max(0, Math.min(ideal, viewport.scrollHeight - viewport.clientHeight));
+  const max = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+  return Math.min(Math.max(el.offsetTop - gap, 0), max);
 }
 
 /**
- * Anchor resolution (§2.5): if the read-only caret is placed in a paragraph,
- * that paragraph IS the anchor. Otherwise pick the mounted node whose rendered
- * vertical center is closest to the viewport center.
+ * Anchor resolution (§2.5, amended 2026-07-18): the topmost ACTUALLY-VISIBLE
+ * node — the node whose box contains the viewport's top edge, else the first
+ * node starting below it, else (over-scrolled past everything) the
+ * bottommost. Deliberately NOT "closest to the top edge": a node whose
+ * bottom scrolled 2px above the edge is close but no longer being read.
+ *
+ * No caret parameter — scroll position is the only anchor signal. The caret
+ * marker carries no visible UI (see design doc), so it must not steer
+ * navigation the user cannot see happening.
  *
  * Single pass over the mounted boxes. The inputs are already plain cached
  * `offsetTop`/`offsetHeight` numbers, so there is NO `getBoundingClientRect`
  * in the loop — layout is never touched here.
  */
 export function resolveAnchor(
-  caretParagraphId: string | null | undefined,
   mounted: readonly MountedBox[],
-  viewportCenter: number
+  viewportTop: number,
 ): string | null {
-  if (caretParagraphId) return caretParagraphId;
-  let best: string | null = null;
-  let bestDist = Infinity;
+  let firstBelow: MountedBox | null = null;
+  let bottommost: MountedBox | null = null;
   for (const el of mounted) {
-    const center = el.offsetTop + el.offsetHeight / 2;
-    const dist = Math.abs(center - viewportCenter);
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = el.id;
+    if (el.offsetTop <= viewportTop && viewportTop < el.offsetTop + el.offsetHeight) {
+      return el.id;
     }
+    if (el.offsetTop > viewportTop && (!firstBelow || el.offsetTop < firstBelow.offsetTop)) {
+      firstBelow = el;
+    }
+    if (!bottommost || el.offsetTop > bottommost.offsetTop) bottommost = el;
   }
-  return best;
+  return (firstBelow ?? bottommost)?.id ?? null;
 }
 
 /**

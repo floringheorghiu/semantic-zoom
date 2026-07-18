@@ -74,8 +74,6 @@ beforeEach(() => {
     table,
     index,
     level: 0,
-    caret: { paragraphId: null, offset: 0 },
-    caretIsCurrent: false,
     lastCaretIn: new Map(),
     lastAnchorIn: new Map(),
   };
@@ -115,5 +113,5 @@ test('fresh top-of-doc, no caret, zoom L0->L-1 scrolls to the FIRST section (not
   const firstSid = table.order.sections[0];
   expect(firstSid).toBe('S-ab80d77b-0'); // the fixture's actual first section
   expect(scrolls).toHaveLength(1);
-  expect(scrolls[0].top).toBe(0); // centers on the FIRST section, not a later one
+  expect(scrolls[0].top).toBe(0); // top-aligns on the FIRST section, not a later one
 });

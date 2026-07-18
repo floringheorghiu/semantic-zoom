@@ -1,4 +1,4 @@
-import { test, expect, beforeEach, afterEach } from 'vitest';
+import { test, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Subscription } from 'rxjs';
 
 import { buildIndex, type LookupTable, type ZoomLevel } from '../engine/schema';
@@ -51,13 +51,11 @@ function flushFrame(): void {
 // --- Session state the effect reads via getState (as main.ts supplies it). ---
 let viewport: HTMLElement;
 let level: ZoomLevel;
-let caret: { paragraphId: string | null; offset: number };
-let caretIsCurrent: boolean;
 const lastCaretIn = new Map<string, string>();
 const lastAnchorIn = new Map<string, string>();
 
 function getState(): ZoomTransitionState {
-  return { table, index, level, caret, caretIsCurrent, lastCaretIn, lastAnchorIn };
+  return { table, index, level, lastCaretIn, lastAnchorIn };
 }
 
 /** Mimic main.ts requestLevel: dispatch ZOOM_SET, then advance the source. */
@@ -86,8 +84,6 @@ beforeEach(() => {
   // Reset the shared store zoom to 0 so the mount emission is a no-op.
   actions$.next(zoomSet(0));
   level = 0;
-  caret = { paragraphId: null, offset: 0 };
-  caretIsCurrent = true; // default: no fixture scrolls the caret away
   lastCaretIn.clear();
   lastAnchorIn.clear();
 
@@ -153,7 +149,6 @@ function fireOpacityEnd(layer: HTMLElement): void {
 }
 
 test('frame n: entering layer is appended with NO scroll write', () => {
-  caret = { paragraphId: 'P1a', offset: 0 };
   requestLevel(-1); // synchronously runs frame n
 
   const entering = viewport.querySelectorAll('.level-layer[data-entering]');
@@ -168,10 +163,14 @@ test('frame n: entering layer is appended with NO scroll write', () => {
 });
 
 test('frame n+1: scroll write occurs and the fade starts (data-entering removed)', () => {
-  caret = { paragraphId: 'P1a', offset: 0 };
+  // The source-level anchor is the topmost actually-visible .pnode: stub P1a
+  // so it contains the (default, 0) scroll position of the old layer.
+  const oldLayer = viewport.querySelector('.level-layer') as HTMLElement;
+  stubBox(oldLayer.querySelector('.pnode[data-pid="P1a"]') as HTMLElement, 0, 50);
+
   requestLevel(-1);
   const layer = viewport.querySelector('.level-layer[data-entering]') as HTMLElement;
-  // Give the entering layer real geometry: target S1 centered → 500+50-200 = 350.
+  // Give the entering layer real geometry: target S1 top-aligned → 500 - 24 = 476.
   stubMetrics(layer, 400, 2000);
   stubBox(layer.querySelector('.pgroup[data-sid="S1"]') as HTMLElement, 500, 100);
 
@@ -180,13 +179,12 @@ test('frame n+1: scroll write occurs and the fade starts (data-entering removed)
 
   expect(scrolls.length).toBe(1);
   expect(scrolls[0].el).toBe(layer); // scroll routed onto the NEW layer
-  expect(scrolls[0].top).toBe(350); // centered, not slammed to the top
+  expect(scrolls[0].top).toBe(476); // top-aligned, not centered
   expect(layer.hasAttribute('data-entering')).toBe(false); // fade started
   expect(layer.style.visibility).toBe('visible');
 });
 
 test('opacity-only: the effect never sets an inline filter or transition', () => {
-  caret = { paragraphId: 'P1a', offset: 0 };
   requestLevel(-1);
   const layer = viewport.querySelector('.level-layer[data-entering]') as HTMLElement;
   flushFrame();
@@ -198,7 +196,6 @@ test('opacity-only: the effect never sets an inline filter or transition', () =>
 });
 
 test('transitionend unmounts the old layer and clears [data-transitioning]', () => {
-  caret = { paragraphId: 'P1a', offset: 0 };
   requestLevel(-1);
   const layer = viewport.querySelector('.level-layer[data-entering]') as HTMLElement;
   flushFrame();
@@ -211,50 +208,53 @@ test('transitionend unmounts the old layer and clears [data-transitioning]', () 
   expect(viewport.dataset.zoom).toBe('-1');
 });
 
-test('a caret you have scrolled away from (caretIsCurrent=false) is ignored — falls back to nearest-center', () => {
+test('the landed node gets a transient data-landed mark, removed by the fallback timer', () => {
+  // Only fake setTimeout/clearTimeout — this file's beforeEach installs its
+  // OWN requestAnimationFrame mock (a manual queue drained by flushFrame());
+  // vi.useFakeTimers()'s default toFake list would otherwise shadow it.
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  try {
+    requestLevel(-1);
+    const layer = viewport.querySelector('.level-layer[data-entering]') as HTMLElement;
+    stubMetrics(layer, 400, 2000);
+    stubBox(layer.querySelector('.pgroup[data-sid="S1"]') as HTMLElement, 500, 100);
+    flushFrame();
+    fireOpacityEnd(layer);
+
+    const landed = layer.querySelector('[data-landed]') as HTMLElement | null;
+    expect(landed).not.toBeNull();
+    expect(landed!.dataset.sid).toBe('S1');
+
+    vi.advanceTimersByTime(1600); // jsdom fires no animationend — fallback path
+    expect(layer.querySelector('[data-landed]')).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('the anchor is whichever node is topmost-visible, not whichever was last clicked', () => {
   const layer = viewport.querySelector('.level-layer') as HTMLElement;
   const [p1a, p1b, p2a, p2b] = Array.from(layer.querySelectorAll<HTMLElement>('.pnode'));
   stubBox(p1a, 0, 10);
   stubBox(p1b, 10, 10);
   stubBox(p2a, 1000, 10);
   stubBox(p2b, 1010, 10);
-  stubMetrics(layer, 2000, 3000); // center = scrollTop(0) + 2000/2 = 1000 → nearest is P2a
+  Object.defineProperty(layer, 'scrollTop', { value: 1000, configurable: true }); // scrolled to P2a
 
-  caret = { paragraphId: 'P1a', offset: 0 }; // an old click, in S1
-  caretIsCurrent = false; // ...but the user has since scrolled away from it
   requestLevel(-1);
 
-  // recordPlace (§2.5) records the ancestor of whichever anchor was actually
-  // used — S2 (P2a's parent, nearest-center), NOT S1 (the stale caret's
-  // section). Proves the stale caret was ignored, not just "also considered."
+  // recordPlace (§2.5) records the ancestor of the topmost-visible node —
+  // S2 (P2a's parent), regardless of anything ever clicked earlier.
   expect(lastCaretIn.get('S2')).toBe('P2a');
   expect(lastCaretIn.has('S1')).toBe(false);
 });
 
-test('by contrast, a caret that IS still current wins over nearest-center', () => {
-  const layer = viewport.querySelector('.level-layer') as HTMLElement;
-  const [p1a, p1b, p2a, p2b] = Array.from(layer.querySelectorAll<HTMLElement>('.pnode'));
-  stubBox(p1a, 0, 10);
-  stubBox(p1b, 10, 10);
-  stubBox(p2a, 1000, 10);
-  stubBox(p2b, 1010, 10);
-  stubMetrics(layer, 2000, 3000); // same geometry — nearest-center would pick P2a
-
-  caret = { paragraphId: 'P1a', offset: 0 };
-  caretIsCurrent = true; // no scroll since placing it — still authoritative
-  requestLevel(-1);
-
-  expect(lastCaretIn.get('S1')).toBe('P1a');
-  expect(lastCaretIn.has('S2')).toBe(false);
-});
-
-test('regression: a stale level-0 caret does not crash a transition FROM sections', () => {
-  // Reproduces the reported hang, following the real flow: click raw content
-  // (sets caret paragraphId), zoom to Sections, then zoom back. Before the fix,
-  // at source −1 the stale P-id was used as the anchor and `mapAcrossLevels`
-  // did `table.sections[<pid>].children[0]` → threw → the switchMap subscription
-  // errored and ALL further zoom switches stopped responding.
-  caret = { paragraphId: 'P1a', offset: 0 }; // clicked a raw paragraph
+test('regression: an unresolvable anchor does not crash a transition FROM sections', () => {
+  // Reproduces the reported hang, following the real flow: zoom to Sections,
+  // then zoom back with the old layer's boxes unmeasurable (jsdom defaults:
+  // offsetHeight 0 everywhere). Before the fix, a bad anchor id could be fed
+  // into `mapAcrossLevels`, which threw → the switchMap subscription errored
+  // and ALL further zoom switches stopped responding.
 
   // 0 → −1 and settle (store zoom tracks via requestLevel's zoomSet).
   requestLevel(-1);
@@ -263,7 +263,7 @@ test('regression: a stale level-0 caret does not crash a transition FROM section
   fireOpacityEnd(entering);
   expect(viewport.querySelector('.level-layer')?.getAttribute('data-level')).toBe('-1');
 
-  // The caret pid is still stale at −1. Zooming back to raw must NOT throw
+  // Geometry is still all zeros at −1. Zooming back to raw must NOT throw
   // (a throw would error the switchMap subscription forever)...
   expect(() => requestLevel(0)).not.toThrow();
   // ...and the transition still runs: an entering level-0 layer is appended.
@@ -302,7 +302,7 @@ test('measureTargetTop force-renders the target\'s group for the read, then rest
 
   expect(seenDuringRead).toBe('visible');            // forced to render
   expect(group.style.contentVisibility).toBe('auto'); // ...and restored
-  expect(top).toBe(350);                              // 500 + 100/2 - 400/2
+  expect(top).toBe(476);                              // 500 - 24 (top-aligned)
 });
 
 test('measureTargetTop leaves the group untouched when the group IS the target (−1/−2)', () => {
@@ -320,7 +320,7 @@ test('measureTargetTop leaves the group untouched when the group IS the target (
     },
   });
 
-  expect(measureTargetTop(layer, -1, 'S1')).toBe(350);
+  expect(measureTargetTop(layer, -1, 'S1')).toBe(476); // 500 - 24 (top-aligned)
   expect(touched).toBe(false); // a .pgroup always has its own box
   expect(group.style.contentVisibility).toBe('auto');
 });
@@ -523,8 +523,8 @@ test('mountedBoxes(level=-1/-2) never touches content-visibility — a .pgroup a
 test('settleScroll stops immediately when already converged (no scroll command)', () => {
   const { layer, node } = makeLayer();
   stubMetrics(layer, 400, 2000);
-  stubBox(node, 500, 100); // target top = 350
-  Object.defineProperty(layer, 'scrollTop', { value: 350, configurable: true });
+  stubBox(node, 500, 100); // target top = 500 - 24 = 476 (top-aligned)
+  Object.defineProperty(layer, 'scrollTop', { value: 476, configurable: true });
 
   const scheduled: (() => void)[] = [];
   settleScroll(layer, 0, 'P1a', 5, (cb) => void scheduled.push(cb));
@@ -536,7 +536,7 @@ test('settleScroll stops immediately when already converged (no scroll command)'
 test('settleScroll re-enqueues while not converged, capped at the frame budget', () => {
   const { layer, node } = makeLayer();
   stubMetrics(layer, 400, 2000);
-  stubBox(node, 500, 100); // target top = 350, layer.scrollTop stays 0 in jsdom
+  stubBox(node, 500, 100); // target top = 476, layer.scrollTop stays 0 in jsdom
 
   // Drive the chain by hand: each scheduled callback is one animation frame.
   const scheduled: (() => void)[] = [];
@@ -556,7 +556,7 @@ test('settleScroll re-enqueues while not converged, capped at the frame budget',
   expect(scrolls.length).toBe(6);
   for (const c of scrolls) {
     expect(c.el).toBe(layer);
-    expect(c.top).toBe(350);
+    expect(c.top).toBe(476);
   }
 });
 
@@ -581,7 +581,6 @@ test('settleScroll writes scroll ONLY through the scrollCommands$ queue', () => 
 });
 
 test('a superseded zoom aborts the previous transition (switchMap) — one final layer', () => {
-  caret = { paragraphId: 'P1a', offset: 0 };
   requestLevel(-1); // frame n for −1
   requestLevel(-2); // aborts −1, frame n for −2
 
