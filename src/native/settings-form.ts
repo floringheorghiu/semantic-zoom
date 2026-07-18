@@ -14,6 +14,13 @@
 // have exactly one provider each.
 
 import { invoke } from '@tauri-apps/api/core';
+import { initTheme } from '../state/theme';
+
+// Follow the app theme (ratified): both webviews share localStorage, so this
+// picks up the saved preference at open and live-syncs via `storage` events
+// when the main window's switcher changes it. settings.html has no tokens.css
+// — the inline `color-scheme` that initTheme stamps drives its UA styling.
+initTheme();
 
 type EngineKind = 'remote' | 'ollama' | 'custom-local';
 type Provider = 'cerebras' | 'xiaomi' | 'openrouter' | 'llama-cpp' | 'ollama';

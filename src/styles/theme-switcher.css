@@ -1,0 +1,59 @@
+/* Titlebar theme switcher (Figma 303:286/303:287): 28px-tall segmented pill,
+   three 20px icons, active segment tinted --sz-ui-accent with a 2px bottom
+   bar (clipped to the container's 8px radius). Mounted only on the start
+   screen, at the toolbar's right edge. */
+
+.theme-switcher {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 28px;
+  padding: 0 8px;
+  margin-left: auto; /* right edge of the titlebar */
+  border: 1px solid var(--sz-seg-border);
+  border-radius: 8px;
+  background: var(--sz-key-bg);
+  overflow: hidden; /* clips the active bar's corners to the pill radius */
+}
+
+.theme-switcher__seg {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--sz-muted);
+  cursor: pointer;
+}
+
+.theme-switcher__seg svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+
+.theme-switcher__seg--active {
+  color: var(--sz-ui-accent);
+}
+
+/* Active indicator: the 2px bar under the icon (Figma 303:286). Instant
+   class swap — no transition (D1: opacity is the only animated property). */
+.theme-switcher__seg--active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--sz-ui-accent);
+}
+
+.theme-switcher__seg:focus-visible {
+  outline: 2px solid var(--sz-ui-accent);
+  outline-offset: -2px;
+  border-radius: 4px;
+}
