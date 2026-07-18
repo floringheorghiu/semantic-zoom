@@ -12,8 +12,13 @@
 
 use crate::commands::provider_config::Provider;
 use keyring::Entry;
+use security_framework::item::{ItemClass, ItemSearchOptions};
 
 const SERVICE: &str = "com.semantic-zoom.llm-api-key";
+/// The `keyring::Entry` account/user field every entry in this file uses —
+/// shared with `status_for`'s raw `ItemSearchOptions` query so the two never
+/// drift and silently search different items.
+const ACCOUNT: &str = "default";
 
 fn service_for_provider(provider: Provider) -> String {
     match provider {
@@ -39,17 +44,35 @@ fn service_for_provider(provider: Provider) -> String {
 // `SERVICE`: a `cargo test` run once deleted the user's real production key
 // (2026-07-16) because the round-trip test cleaned up the real entry.
 fn entry_for(service: &str) -> Result<Entry, String> {
-    Entry::new(service, "default").map_err(|e| e.to_string())
+    Entry::new(service, ACCOUNT).map_err(|e| e.to_string())
 }
 
 fn save_for(service: &str, key: &str) -> Result<(), String> {
     entry_for(service)?.set_password(key).map_err(|e| e.to_string())
 }
 
+/// Whether a key is configured, WITHOUT reading it. `keyring::Entry` only
+/// exposes "get the password" (which decrypts the secret) — on macOS that's
+/// exactly the operation the OS gates behind the "wants to use your
+/// confidential information" consent dialog, so a naive `get_password().is_ok()`
+/// status check prompts on every app launch (`refreshProviderStatus` in
+/// main.ts runs it unconditionally at startup) even when nothing is ever
+/// generated. Attribute-only queries (`load_data(false)`) via the modern
+/// `SecItemCopyMatching` API (here, `security_framework::item`) can confirm
+/// existence without ever decrypting `kSecValueData`, so macOS does not
+/// prompt for them. `save_for`/`get_key_for` are untouched — they legitimately
+/// need the real secret, and consent there is meaningful.
 fn status_for(service: &str) -> bool {
-    entry_for(service)
-        .and_then(|e| e.get_password().map_err(|e| e.to_string()))
-        .is_ok()
+    ItemSearchOptions::new()
+        .class(ItemClass::generic_password())
+        .service(service)
+        .account(ACCOUNT)
+        .load_attributes(true) // required: SecItemCopyMatching segfaults with no load_* set
+        .load_data(false)
+        .limit(1)
+        .search()
+        .map(|results| !results.is_empty())
+        .unwrap_or(false)
 }
 
 fn delete_for(service: &str) -> Result<(), String> {
