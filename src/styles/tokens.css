@@ -23,6 +23,16 @@
   --sz-map-bar:        #d5e0ff;  /* inactive group bar + separator dot */
   --sz-map-bar-active: #8080ff;  /* group intersecting the viewport */
 
+  /* start-screen chrome (Figma 298:139 uplift): action pills, hotkey badges,
+     recent-file cards, and the titlebar theme switcher */
+  --sz-ui-accent:  #8080ff;             /* hotkey text, switcher active icon */
+  --sz-btn-bg:     #ffffff;             /* action-pill surface */
+  --sz-btn-border: #e2e8f0;
+  --sz-key-bg:     #f8fafc;             /* hotkey badge + switcher surface */
+  --sz-row-bg:     #ffffff;             /* recent-file card */
+  --sz-row-border: #e2e8f0;
+  --sz-seg-border: rgba(0, 0, 0, 0.05); /* switcher hairline */
+
   /* accent + semantic */
   --sz-accent:        #2020fe;   /* milestone/active blue */
   --sz-accent-border: rgba(32, 32, 254, 0.50);
@@ -50,14 +60,15 @@
   color-scheme: light;
 }
 
-/* Dark mapping (D-A) — opt-in via data-theme, NOT prefers-color-scheme. Surface/
-   ink/track override; accent + semantic use lighter tints for dark surfaces.
-   The exact dark palette is refined in a later step; this establishes the
-   mechanism. */
+/* Dark mapping (D-A) — opt-in via data-theme, NOT prefers-color-scheme.
+   Palette ratified from the Figma dark start screen (306:143): a navy family
+   rather than neutral grey. state/theme.ts owns stamping data-theme. */
 :root[data-theme="dark"] {
-  --sz-bg:            #1e1e1e;
-  --sz-ink:           #e8e8ea;
-  --sz-muted:         #a0a3ad;
+  --sz-bg:            #0a0e1a;   /* sampled from the mock's window ground */
+  --sz-ink:           #f8fafc;
+  --sz-muted:         #94a3b8;
+  --sz-muted-30:      rgba(148, 163, 184, 0.30);
+  --sz-muted-50:      rgba(148, 163, 184, 0.50);
   --sz-border:        rgba(255, 255, 255, 0.12);
   --sz-hairline:      rgba(255, 255, 255, 0.05);
   --sz-card-head:     rgba(255, 255, 255, 0.03);
@@ -69,6 +80,16 @@
   /* content map (§4.9): a dim indigo rail, a luminous active bar */
   --sz-map-bar:        #39406b;
   --sz-map-bar-active: #8f8fff;
+
+  /* start-screen chrome — dark tints (306:158 / 306:176; btn-bg ratified
+     as #161d3b by the user, superseding the mock's #141829) */
+  --sz-ui-accent:  #a6a6ff;
+  --sz-btn-bg:     #161d3b;
+  --sz-btn-border: #252e48;
+  --sz-key-bg:     #222d4f;
+  --sz-row-bg:     #1b223c;
+  --sz-row-border: #252e48;
+  --sz-seg-border: rgba(255, 255, 255, 0.05);
 
   /* accent/semantic: lighter tints for dark surfaces */
   --sz-accent:        #8a9bff;

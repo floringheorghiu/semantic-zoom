@@ -44,3 +44,12 @@ export function addRecentFile(path: string): RecentFile[] {
   }
   return toRecentFiles(next);
 }
+
+/** Drop the whole history ("Clear history", Figma 306:174). */
+export function clearRecentFiles(): void {
+  try {
+    window.localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Storage unavailable — nothing persisted to clear.
+  }
+}
