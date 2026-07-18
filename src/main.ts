@@ -114,16 +114,6 @@ let contentMapTeardown: (() => void) | null = null;
 /** The pre-open placeholder (Figma 77:2622); torn down on the first openFile. */
 let emptyStateTeardown: (() => void) | null = null;
 let themeSwitcher: ThemeSwitcherHandle | null = null;
-/**
- * True right after the caret is placed (click/arrow/hot-reload restore),
- * false once the user has scrolled since. Gates whether the caret still
- * counts as "where you currently are" for zoom-out anchoring (§2.5 anchor
- * rule 1) — refining the spec-literal "caret always wins once placed" rule,
- * which otherwise anchors zoom-out to an arbitrarily old click regardless of
- * where you've since scrolled to. See `getZoomState`'s `caretIsCurrent` and
- * `getZoomTransitionEffect` in viewport.ts for where this is consumed.
- */
-let caretIsCurrent = false;
 
 let viewportEl: HTMLElement;
 let scrubberEl: HTMLElement;
@@ -570,8 +560,6 @@ function getZoomState(): ZoomTransitionState | null {
     table: currentTable,
     index: currentIndex,
     level: currentLevel,
-    caret: s.caret,
-    caretIsCurrent,
     lastCaretIn: s.lastCaretIn,
     lastAnchorIn: s.lastAnchorIn,
   };
@@ -686,7 +674,6 @@ function moveActiveGroup(next: string | null): void {
   if (currentLevel === 0) {
     const firstPid = currentTable.sections[next]?.children[0];
     if (firstPid) {
-      caretIsCurrent = true;
       actions$.next(caretPlaced(firstPid, 0));
     }
   }
@@ -829,18 +816,6 @@ function onViewportScroll(): void {
 }
 
 /**
- * A genuine user scroll gesture (trackpad/wheel) happened — the caret no
- * longer represents "where you currently are" for zoom-out anchoring (see
- * `caretIsCurrent`). Deliberately `wheel`, not the `scroll` event: `scroll`
- * also fires for OUR OWN programmatic writes (`scrollCommands$`, e.g. the
- * zoom transition settling into its target), which must NOT invalidate the
- * caret that transition itself just used as anchor.
- */
-function onViewportWheel(): void {
-  caretIsCurrent = false;
-}
-
-/**
  * Mount the map once. The listener is CAPTURE-phase on `#viewport`: scroll does
  * not bubble, but it does propagate down the capture path from the window, so
  * this single listener catches the `.level-layer`'s scroll across layer swaps.
@@ -848,10 +823,8 @@ function onViewportWheel(): void {
 function mountContentMapOnce(): void {
   contentMap = mountContentMap(contentMapEl, { onSelect: scrollItemToTop });
   viewportEl.addEventListener('scroll', onViewportScroll, true);
-  viewportEl.addEventListener('wheel', onViewportWheel, { passive: true });
   contentMapTeardown = () => {
     viewportEl.removeEventListener('scroll', onViewportScroll, true);
-    viewportEl.removeEventListener('wheel', onViewportWheel);
     if (mapRaf) cancelAnimationFrame(mapRaf);
     mapRaf = 0;
     contentMap?.teardown();
@@ -940,7 +913,6 @@ function remountCaret(): void {
   const hasParagraphs = !!currentTable && currentLevel === 0;
   if (!hasParagraphs) return;
   caretTeardown = mountCaret(viewportEl, (pid, offset) => {
-    caretIsCurrent = true;
     actions$.next(caretPlaced(pid, offset));
   });
 }
@@ -1120,7 +1092,6 @@ function closeDocument(): void {
   generationRuns = []; // history is per-document; the tooltip goes dormant
   summariesAvailable = false;
   prevGroups = new Map();
-  caretIsCurrent = false;
 
   actions$.next(docClosed());
   actions$.next(zoomSet(0));
@@ -1404,9 +1375,6 @@ function installKeyboardShortcuts(): void {
   // bookkeeping (no CSS renders it, so it has no visible effect on its own)
   // and never scrolled the view. This handler never touches the caret, so
   // the two run side by side on the same keypress without fighting over it.
-  // Sets `caretIsCurrent = false` for the same reason `onViewportWheel`
-  // does: a keyboard scroll is just as much "the user moved away from the
-  // caret" as a trackpad gesture is, for zoom-out anchoring purposes (§2.5).
   const LINE_SCROLL_PX = 80;
   window.addEventListener('keydown', (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
@@ -1415,7 +1383,6 @@ function installKeyboardShortcuts(): void {
     const layer = currentLayer();
     if (!layer) return;
     e.preventDefault();
-    caretIsCurrent = false;
     const max = Math.max(0, layer.scrollHeight - layer.clientHeight);
     const delta = e.key === 'ArrowDown' ? LINE_SCROLL_PX : -LINE_SCROLL_PX;
     const top = Math.min(Math.max(layer.scrollTop + delta, 0), max);
@@ -1654,7 +1621,6 @@ async function handleDocChanged(): Promise<void> {
       const restored = restoreCaret(oldCaret, oldTable, newResult.table);
       if (restored) {
         markCaret(restored.paragraphId);
-        caretIsCurrent = true;
         actions$.next(caretPlaced(restored.paragraphId, restored.offset));
       } else if (currentLevel === 0) {
         // Caret cleared (already reset by DOC_LOADED) → preserve scroll by ratio.
