@@ -444,3 +444,31 @@
    their dark values. Same now for the table + code block: `--sz-table-head`,
    `--sz-hairline`, `--sz-track`, `--sz-border` and `--sz-code-tint` all remap
    under `[data-theme="dark"]`, so their rules need no override here. */
+
+/* ---------- Transient landing highlight (design doc 2026-07-18) ----------
+   Shows what a zoom jump anchored to: a left accent bar on the node that
+   landed just below the top edge, fading over ~1s. `[data-landed]` is set
+   on a `.pnode` or `.pgroup` by viewport.ts's transition settle and removed
+   on `animationend` (with a timeout fallback). Animates opacity ONLY (D1) —
+   `--sz-accent` is already theme-aware, so no dark-mode override is needed. */
+[data-landed] {
+  position: relative;
+}
+
+[data-landed]::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--sz-accent);
+  animation: sz-landing-fade 1s ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes sz-landing-fade {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
