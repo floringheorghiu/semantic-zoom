@@ -588,6 +588,17 @@ function runTransition(
           const ms = (performance.now() - swapStart).toFixed(1);
           console.info(`[perf] level-swap ${source}→${target}: ${ms}ms (budget ≤250ms)`);
         }
+        // Transient landing highlight (design doc 2026-07-18): show what the
+        // jump anchored to. Opacity-only fade (D1), self-clearing.
+        if (targetId && !prefersReducedMotion()) {
+          const landed = findNode(newLayer, target, targetId);
+          if (landed) {
+            landed.setAttribute('data-landed', '');
+            const clearLanded = (): void => landed.removeAttribute('data-landed');
+            landed.addEventListener('animationend', clearLanded, { once: true });
+            setTimeout(clearLanded, 1600); // jsdom / tab-hidden safety net
+          }
+        }
         // Transition has settled into its FINAL layer: let the owner (main.ts)
         // (re)mount caret + focus-mask against the layer that actually remains.
         onSettled?.(target);

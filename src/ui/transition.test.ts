@@ -1,4 +1,4 @@
-import { test, expect, beforeEach, afterEach } from 'vitest';
+import { test, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Subscription } from 'rxjs';
 
 import { buildIndex, type LookupTable, type ZoomLevel } from '../engine/schema';
@@ -206,6 +206,30 @@ test('transitionend unmounts the old layer and clears [data-transitioning]', () 
   expect((layers[0] as HTMLElement).dataset.level).toBe('-1');
   expect(viewport.hasAttribute('data-transitioning')).toBe(false);
   expect(viewport.dataset.zoom).toBe('-1');
+});
+
+test('the landed node gets a transient data-landed mark, removed by the fallback timer', () => {
+  // Only fake setTimeout/clearTimeout — this file's beforeEach installs its
+  // OWN requestAnimationFrame mock (a manual queue drained by flushFrame());
+  // vi.useFakeTimers()'s default toFake list would otherwise shadow it.
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  try {
+    requestLevel(-1);
+    const layer = viewport.querySelector('.level-layer[data-entering]') as HTMLElement;
+    stubMetrics(layer, 400, 2000);
+    stubBox(layer.querySelector('.pgroup[data-sid="S1"]') as HTMLElement, 500, 100);
+    flushFrame();
+    fireOpacityEnd(layer);
+
+    const landed = layer.querySelector('[data-landed]') as HTMLElement | null;
+    expect(landed).not.toBeNull();
+    expect(landed!.dataset.sid).toBe('S1');
+
+    vi.advanceTimersByTime(1600); // jsdom fires no animationend — fallback path
+    expect(layer.querySelector('[data-landed]')).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test('the anchor is whichever node is topmost-visible, not whichever was last clicked', () => {
