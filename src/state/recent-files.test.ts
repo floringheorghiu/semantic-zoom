@@ -1,5 +1,5 @@
 import { test, expect, beforeEach } from 'vitest';
-import { getRecentFiles, addRecentFile } from './recent-files';
+import { getRecentFiles, addRecentFile, clearRecentFiles } from './recent-files';
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -34,4 +34,10 @@ test('list is capped at 5 entries', () => {
   const result = getRecentFiles();
   expect(result).toHaveLength(5);
   expect(result.map((f) => f.path)).toEqual(['/a/6.md', '/a/5.md', '/a/4.md', '/a/3.md', '/a/2.md']);
+});
+
+test('clearRecentFiles empties the persisted history', () => {
+  addRecentFile('/a/one.md');
+  clearRecentFiles();
+  expect(getRecentFiles()).toEqual([]);
 });

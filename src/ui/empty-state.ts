@@ -14,6 +14,8 @@ export interface EmptyStateOptions {
   onOpen: () => void;
   onSelectRecent: (path: string) => void;
   onSettings: () => void;
+  /** "Clear history" affordance (Figma 306:174); omitted → link not shown. */
+  onClearRecent?: () => void;
   /** App version shown at the end of the footer (e.g. "0.3.0"); omitted → no version chip. */
   version?: string;
 }
@@ -129,10 +131,23 @@ export function mountEmptyState(root: HTMLElement, opts: EmptyStateOptions): Emp
     const recent = document.createElement('div');
     recent.className = 'empty-state__recent';
 
+    const head = document.createElement('div');
+    head.className = 'empty-state__recent-head';
+
     const label = document.createElement('p');
     label.className = 'empty-state__recent-label';
     label.textContent = 'Recent Files';
-    recent.appendChild(label);
+    head.appendChild(label);
+
+    if (opts.onClearRecent) {
+      const clear = document.createElement('button');
+      clear.type = 'button';
+      clear.className = 'empty-state__recent-clear';
+      clear.textContent = 'Clear history';
+      clear.addEventListener('click', () => opts.onClearRecent?.());
+      head.appendChild(clear);
+    }
+    recent.appendChild(head);
 
     for (const file of opts.recentFiles) {
       recent.appendChild(buildRecentItem(file, opts.onSelectRecent));

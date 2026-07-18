@@ -100,3 +100,27 @@ test('teardown removes the container from the DOM', () => {
   handle.teardown();
   expect(root.querySelector('.empty-state')).toBeNull();
 });
+
+test('renders "Clear history" when a handler is given and routes clicks to it', () => {
+  const root = document.createElement('div');
+  const onClearRecent = vi.fn();
+  mountEmptyState(root, {
+    recentFiles: [{ path: '/a/zoom_test.md', name: 'zoom_test.md' }],
+    ...noopHandlers,
+    onClearRecent,
+  });
+
+  const clear = root.querySelector<HTMLButtonElement>('.empty-state__recent-clear');
+  expect(clear?.textContent).toBe('Clear history');
+  clear!.click();
+  expect(onClearRecent).toHaveBeenCalledOnce();
+});
+
+test('omits "Clear history" when no handler is provided', () => {
+  const root = document.createElement('div');
+  mountEmptyState(root, {
+    recentFiles: [{ path: '/a/zoom_test.md', name: 'zoom_test.md' }],
+    ...noopHandlers,
+  });
+  expect(root.querySelector('.empty-state__recent-clear')).toBeNull();
+});
