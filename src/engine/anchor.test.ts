@@ -1,7 +1,8 @@
-import { test, expect } from 'vitest';
+import { describe, test, expect } from 'vitest';
 import { buildIndex, type LookupTable } from './schema';
 import {
-  centerScrollTop,
+  TOP_GAP,
+  topAlignScrollTop,
   resolveAnchor,
   recordPlace,
   mapAcrossLevels,
@@ -171,50 +172,51 @@ test('round-trip 0 → −2 → 0 returns to the exact paragraph (two-hop memory
   expect(mapAcrossLevels(-2, 0, 'M3', ctx)).toBe('P7');
 });
 
-test('centerScrollTop clamps at 0', () => {
-  const top = centerScrollTop(
-    { offsetTop: 0, offsetHeight: 10 },
-    { clientHeight: 100, scrollHeight: 1000 }
-  );
-  expect(top).toBe(0);
-});
-
-test('centerScrollTop clamps at scrollHeight - clientHeight', () => {
-  const top = centerScrollTop(
-    { offsetTop: 990, offsetHeight: 10 },
-    { clientHeight: 100, scrollHeight: 1000 }
-  );
-  expect(top).toBe(900);
-});
-
-test('centerScrollTop centers an element in between', () => {
-  // ideal = 500 + 100/2 - 400/2 = 350, unclamped
-  const top = centerScrollTop(
-    { offsetTop: 500, offsetHeight: 100 },
-    { clientHeight: 400, scrollHeight: 2000 }
-  );
-  expect(top).toBe(350);
-});
-
-test('resolveAnchor returns the caret paragraph when set', () => {
-  const mounted = [
-    { id: 'P1a', offsetTop: 0, offsetHeight: 100 },
-    { id: 'P1b', offsetTop: 100, offsetHeight: 100 },
+describe('resolveAnchor — topmost actually-visible node', () => {
+  const boxes = [
+    { id: 'P-a', offsetTop: 0, offsetHeight: 100 },
+    { id: 'P-b', offsetTop: 100, offsetHeight: 200 },
+    { id: 'P-c', offsetTop: 340, offsetHeight: 60 }, // 40px gap above
   ];
-  expect(resolveAnchor('P1b', mounted, 20)).toBe('P1b');
+  test('node containing the top edge wins', () => {
+    expect(resolveAnchor(boxes, 150)).toBe('P-b');
+  });
+  test('top edge exactly at a node boundary picks the node starting there', () => {
+    expect(resolveAnchor(boxes, 100)).toBe('P-b');
+  });
+  test('top edge in a gap → first node starting below it', () => {
+    expect(resolveAnchor(boxes, 310)).toBe('P-c'); // between b (ends 300) and c (starts 340)
+  });
+  test('node scrolled just past the top edge does NOT win by proximity', () => {
+    // top edge at 301: P-b's bottom (300) is 1px above — closest, but gone.
+    expect(resolveAnchor(boxes, 301)).toBe('P-c');
+  });
+  test('top edge below every node → bottommost node (over-scroll fallback)', () => {
+    expect(resolveAnchor(boxes, 900)).toBe('P-c');
+  });
+  test('empty mounted list → null', () => {
+    expect(resolveAnchor([], 0)).toBe(null);
+  });
+  test('zero-height boxes cannot contain the edge and are skipped as containers', () => {
+    const withGhost = [{ id: 'ghost', offsetTop: 150, offsetHeight: 0 }, ...boxes];
+    expect(resolveAnchor(withGhost, 150)).toBe('P-b');
+  });
 });
 
-test('resolveAnchor picks the node nearest the viewport center', () => {
-  const mounted = [
-    { id: 'P1a', offsetTop: 0, offsetHeight: 100 },   // center 50
-    { id: 'P1b', offsetTop: 100, offsetHeight: 100 }, // center 150
-    { id: 'P2a', offsetTop: 200, offsetHeight: 100 }, // center 250
-  ];
-  expect(resolveAnchor(null, mounted, 160)).toBe('P1b');
-  expect(resolveAnchor(null, mounted, 40)).toBe('P1a');
-  expect(resolveAnchor(null, mounted, 300)).toBe('P2a');
-});
-
-test('resolveAnchor returns null for an empty mounted set with no caret', () => {
-  expect(resolveAnchor(null, [], 100)).toBe(null);
+describe('topAlignScrollTop', () => {
+  const vp = { clientHeight: 500, scrollHeight: 2000 };
+  test('lands the node TOP_GAP below the top edge', () => {
+    expect(topAlignScrollTop({ offsetTop: 800 }, vp)).toBe(800 - TOP_GAP);
+  });
+  test('clamps at 0 near the document start', () => {
+    expect(topAlignScrollTop({ offsetTop: 10 }, vp)).toBe(0);
+  });
+  test('clamps at max scroll near the document end', () => {
+    expect(topAlignScrollTop({ offsetTop: 1990 }, vp)).toBe(1500);
+  });
+  test('unscrollable document → 0', () => {
+    expect(
+      topAlignScrollTop({ offsetTop: 100 }, { clientHeight: 500, scrollHeight: 400 }),
+    ).toBe(0);
+  });
 });
