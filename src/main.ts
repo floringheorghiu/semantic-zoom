@@ -25,7 +25,9 @@ import { nextScale, SCALE_DEFAULT } from './ui/content-scale';
 import { markActiveGroup, clearActiveGroups, sectionAtTop } from './ui/active-group';
 import { mountStatusBadge, type StatusBadgeHandle } from './ui/status-badge';
 import { mountEmptyState } from './ui/empty-state';
-import { getRecentFiles, addRecentFile } from './state/recent-files';
+import { mountThemeSwitcher, type ThemeSwitcherHandle } from './ui/theme-switcher';
+import { getRecentFiles, addRecentFile, clearRecentFiles } from './state/recent-files';
+import { initTheme, getThemePref, setThemePref } from './state/theme';
 import {
   mountContentMap,
   buildMapModel,
@@ -61,8 +63,15 @@ import './styles/focus-mask.css';
 import './styles/reading.css';
 import './styles/content-map.css';
 import './styles/empty-state.css';
+import './styles/theme-switcher.css';
 import './styles/generate-picker.css';
 import './styles/generation-tooltip.css';
+
+// Apply the saved theme immediately at module evaluation — before any UI
+// mounts — so the first paint is already in the right palette. The callback
+// keeps the titlebar switcher honest when the settings window (or the OS,
+// for 'system') changes the preference behind our back.
+const themeInitTeardown = initTheme((pref) => themeSwitcher?.setValue(pref));
 
 // --- session state (the RxJS store arrives in Task 2.1; direct wiring for now) ---
 let currentLevel: ZoomLevel = 0;
@@ -104,6 +113,7 @@ let generatePicker: GeneratePickerHandle | null = null;
 let contentMapTeardown: (() => void) | null = null;
 /** The pre-open placeholder (Figma 77:2622); torn down on the first openFile. */
 let emptyStateTeardown: (() => void) | null = null;
+let themeSwitcher: ThemeSwitcherHandle | null = null;
 /**
  * True right after the caret is placed (click/arrow/hot-reload restore),
  * false once the user has scrolled since. Gates whether the caret still
@@ -1054,16 +1064,36 @@ function showEmptyState(): void {
     onOpen: () => void promptOpen(),
     onSelectRecent: (path) => void openFile(path),
     onSettings: () => void invoke('open_settings_window'),
+    // Clearing rebuilds the whole placeholder — the recent section vanishes.
+    onClearRecent: () => {
+      clearRecentFiles();
+      showEmptyState();
+    },
     version: __APP_VERSION__,
   }).teardown;
   docFilenameEl.textContent = APP_NAME;
   zoomFooterEl.hidden = true;
+
+  // The theme switcher lives in the titlebar ONLY on the start screen
+  // (ratified): once a document opens, the right edge belongs to the status
+  // pill again. state/theme.ts keeps applying the theme either way.
+  if (!themeSwitcher) {
+    const toolbar = document.querySelector<HTMLElement>('.toolbar');
+    if (toolbar) {
+      themeSwitcher = mountThemeSwitcher(toolbar, {
+        value: getThemePref(),
+        onChange: setThemePref,
+      });
+    }
+  }
 }
 
 function hideEmptyState(): void {
   emptyStateTeardown?.();
   emptyStateTeardown = null;
   zoomFooterEl.hidden = false;
+  themeSwitcher?.teardown();
+  themeSwitcher = null;
 }
 
 /**
@@ -1516,6 +1546,9 @@ window.addEventListener('DOMContentLoaded', () => {
     contentMapTeardown = null;
     emptyStateTeardown?.();
     emptyStateTeardown = null;
+    themeSwitcher?.teardown();
+    themeSwitcher = null;
+    themeInitTeardown();
   });
 
   void installMenu();

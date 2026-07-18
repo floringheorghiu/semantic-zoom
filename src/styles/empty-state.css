@@ -43,7 +43,6 @@
   gap: 0.5rem 2rem;
   width: 100%;
   padding: 1.375rem 1.5rem;
-  border-top: 1px solid var(--sz-border);
   background: var(--sz-bg);
 }
 
@@ -61,13 +60,16 @@
   gap: 0.5rem;
 }
 
+/* Action pills (Figma 303:297/303:304, ratified: pill radius in BOTH themes):
+   bordered surface, 14px medium label, hotkey in a small tinted badge. */
 .empty-state__action {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  border: none;
-  background: none;
-  padding: 0;
+  border: 1px solid var(--sz-btn-border);
+  border-radius: var(--sz-radius-pill);
+  background: var(--sz-btn-bg);
+  padding: 12px 16px;
   font: inherit;
   color: var(--sz-ink);
   cursor: pointer;
@@ -79,18 +81,23 @@
   cursor: default;
 }
 
-.empty-state__action:not(:disabled):hover .empty-state__action-label {
-  text-decoration: underline;
+/* Hover: instant border tint (no transition — D1). */
+.empty-state__action:not(:disabled):hover {
+  border-color: var(--sz-ui-accent);
 }
 
 .empty-state__action-label {
   font-size: 0.875rem;
+  font-weight: 500;
 }
 
 .empty-state__action-key {
-  font: 700 0.75rem/1 var(--sz-mono);
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--sz-key-bg);
+  font: 700 0.6875rem/1.2 var(--sz-font);
   letter-spacing: 0.02em;
-  color: var(--sz-muted-50);
+  color: var(--sz-ui-accent);
 }
 
 .empty-state__recent {
@@ -101,34 +108,64 @@
   width: 100%;
 }
 
+/* Section head (Figma 306:172): label left, "Clear history" right. */
+.empty-state__recent-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
 .empty-state__recent-label {
   margin: 0;
-  font-size: 0.875rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: var(--sz-muted);
 }
 
+.empty-state__recent-clear {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.6875rem;
+  color: var(--sz-muted);
+  cursor: pointer;
+}
+
+.empty-state__recent-clear:hover {
+  text-decoration: underline;
+}
+
+/* Recent-file cards (Figma 306:176): 8px radius, name left, path right. */
 .empty-state__recent-item {
   display: flex;
   align-items: baseline;
   gap: 1rem;
   width: 100%;
-  padding: 0.5rem 1rem;
-  border: 1px solid var(--sz-border);
-  border-radius: 4px;
-  background: none;
+  padding: 10px 16px;
+  border: 1px solid var(--sz-row-border);
+  border-radius: 8px;
+  background: var(--sz-row-bg);
   font: inherit;
   text-align: left;
   cursor: pointer;
 }
 
 .empty-state__recent-item:hover {
-  background: var(--sz-hairline);
+  border-color: var(--sz-ui-accent);
+}
+
+.empty-state__recent-item:hover .empty-state__recent-name {
+  color: var(--sz-ui-accent);
 }
 
 .empty-state__recent-name {
   flex: 1 1 0;
   min-width: 0;
-  font-size: 0.6875rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   color: var(--sz-ink);
   overflow: hidden;
@@ -139,7 +176,7 @@
 .empty-state__recent-path {
   flex: 0 0 auto;
   max-width: 60%;
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
   color: var(--sz-muted);
   overflow: hidden;
   text-overflow: ellipsis;
