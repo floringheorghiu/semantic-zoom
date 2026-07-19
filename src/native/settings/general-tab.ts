@@ -7,6 +7,7 @@
 // each kept in its own init function so they stay cleanly separable.
 
 import { getAccentPref, setAccentPref } from '../../state/accent';
+import { getThemePref, setThemePref, type ThemePref } from '../../state/theme';
 
 /** Presets shown as swatch buttons (user-ratified set), custom via <input type="color">. */
 const ACCENT_PRESETS = ['#8080ff', '#ff6b35', '#2fa26e', '#e0529c', '#d9a514', '#4aa8d8'];
@@ -66,7 +67,40 @@ function initAccentSwatches(): void {
   });
 }
 
-/** Wire every General tab control. Extended by later tasks (theme, anchor). */
-export function initGeneralTab(): void {
+/**
+ * Wire `#theme-group`'s radios: reflect `getThemePref()` on load, write
+ * `setThemePref(value)` on `change`. Returns a `reflectRadios` callback so
+ * the caller can pass it into the entry's `initTheme()` — that keeps these
+ * radios in sync when the pref changes externally (the main-window titlebar
+ * switcher, or another window's `storage` event).
+ */
+function initThemeRadios(): (pref: ThemePref) => void {
+  const group = document.getElementById('theme-group');
+  const radios = group
+    ? Array.from(group.querySelectorAll<HTMLInputElement>('input[name="theme"]'))
+    : [];
+
+  function reflectRadios(pref: ThemePref): void {
+    for (const radio of radios) radio.checked = radio.value === pref;
+  }
+
+  for (const radio of radios) {
+    radio.addEventListener('change', () => {
+      if (radio.checked) setThemePref(radio.value as ThemePref);
+    });
+  }
+
+  reflectRadios(getThemePref());
+  return reflectRadios;
+}
+
+/**
+ * Wire every General tab control. Extended by later tasks (anchor
+ * visibility). Returns the theme-radio sync callback so the settings entry
+ * can feed it into `initTheme()`, keeping radios live-synced with external
+ * theme changes.
+ */
+export function initGeneralTab(): (pref: ThemePref) => void {
   initAccentSwatches();
+  return initThemeRadios();
 }
