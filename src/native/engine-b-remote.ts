@@ -15,9 +15,10 @@ import { segment } from './zoom-tools/segment.mjs';
 import { buildLookupTable, AssembleError } from './zoom-tools/assemble.mjs';
 import { checkLayers } from './zoom-tools/check-layers.mjs';
 import { prePayloadSource } from './zoom-tools/marker.mjs';
-import { SYNTHESIS_SYSTEM_PROMPT, buildUserMessage } from './zoom-tools/synthesis-prompt.mjs';
+import { buildSystemPrompt, buildUserMessage } from './zoom-tools/synthesis-prompt.mjs';
 import { checkOutputContract, normalizeSynthesisOutput, stripMarkdownFence, toAssemblerLayers } from './zoom-tools/output-contract.mjs';
 import type { SegmentBlock } from './zoom-tools/types';
+import { resolveTemplate, type PromptTemplatesConfig } from './template-resolve';
 
 const MAX_ATTEMPTS = 3;
 
@@ -55,6 +56,10 @@ export interface SynthesisRunMeta {
   temperature: number;
   /** Provider-reported usage of the final attempt, if it sent any. */
   usage: { promptTokens?: number; completionTokens?: number } | null;
+  /** Display name of the resolved summarization template this run used
+      (Task 8). Recorded into generation history starting PR 3; harmless
+      extra field on the meta object until then. */
+  template: string;
 }
 
 let lastRunMeta: SynthesisRunMeta | null = null;
@@ -106,11 +111,20 @@ export const remoteSynthesizer: Synthesizer = {
     const title = deriveTitle(blocks);
     const baseUserMessage = buildUserMessage(title, blocks);
 
+    // Template resolution (Task 8): fetch the user's saved template config
+    // and resolve it to one editorial text, used for BOTH the token estimate
+    // below and every llm_complete call this run makes. `.catch(() => null)`
+    // means a config read failure degrades to the 'general' default rather
+    // than failing the whole run — resolveTemplate(null) never throws.
+    const templatesConfig = await invoke<PromptTemplatesConfig | null>('get_prompt_templates').catch(() => null);
+    const tpl = resolveTemplate(templatesConfig);
+    const systemPrompt = buildSystemPrompt(tpl.text);
+
     // Refuse BEFORE the first provider call — the whole model input (system
     // prompt + document-bearing user message), not just the raw source, is
     // what has to fit. Corrective retries only append a short violation note,
     // so the pre-flight estimate stands for all attempts.
-    const inputTokens = estimateTokens(SYNTHESIS_SYSTEM_PROMPT + baseUserMessage);
+    const inputTokens = estimateTokens(systemPrompt + baseUserMessage);
     if (inputTokens > MAX_INPUT_TOKENS) {
       throw new Error(
         `Document is too large to generate a summary: ~${inputTokens.toLocaleString()} tokens ` +
@@ -132,13 +146,13 @@ export const remoteSynthesizer: Synthesizer = {
       // attempts before this was wired in.
       const temperature = TEMPERATURE_BY_ATTEMPT[attempt - 1] ?? 0.6;
       const completion = await invoke<LlmCompletion>('llm_complete', {
-        systemPrompt: SYNTHESIS_SYSTEM_PROMPT,
+        systemPrompt,
         userMessage,
         jsonMode: true,
         temperature,
       });
       const responseText = completion.content;
-      lastRunMeta = { attempts: attempt, temperature, usage: completion.usage ?? null };
+      lastRunMeta = { attempts: attempt, temperature, usage: completion.usage ?? null, template: tpl.name };
 
       checkAborted(signal);
 

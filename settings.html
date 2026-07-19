@@ -24,7 +24,7 @@
         background: color-mix(in srgb, currentColor 4%, transparent);
         color: inherit;
       }
-      #key-row[hidden], #model-custom-row[hidden] { display: none; }
+      #key-row[hidden], #model-custom-row[hidden], #template-add-custom[hidden] { display: none; }
       #status-line { font-size: 12px; opacity: 0.75; min-height: 1.2em; }
       .row { display: flex; gap: 8px; }
       button {
@@ -119,6 +119,7 @@
     <div id="tab-bar" role="tablist">
       <button role="tab" data-tab="general" aria-selected="true">General</button>
       <button role="tab" data-tab="inference" aria-selected="false">Inference</button>
+      <button role="tab" data-tab="prompt" aria-selected="false">Prompt</button>
     </div>
     <section data-tab="general">
       <label>Accent color
@@ -166,6 +167,30 @@
         <button id="remove-key" type="button" hidden>Remove key</button>
       </div>
       <div id="status-line" role="status"></div>
+    </section>
+    <section data-tab="prompt" hidden>
+      <label for="template-select">Template
+        <select id="template-select"></select>
+      </label>
+      <div id="template-add-custom" hidden>
+        <label for="template-new-name">New template name
+          <input id="template-new-name" type="text" placeholder="Template name" autocomplete="off" />
+        </label>
+        <div class="row">
+          <button id="template-add-confirm" type="button">Create</button>
+          <button id="template-add-cancel" type="button">Cancel</button>
+        </div>
+      </div>
+      <label for="template-text">Instructions
+        <textarea id="template-text" rows="14" spellcheck="false"></textarea>
+      </label>
+      <div class="row">
+        <button id="template-save" type="button">Save</button>
+        <button id="template-restore" type="button">Restore default</button>
+        <button id="template-delete" type="button" hidden>Delete</button>
+      </div>
+      <div id="template-note">Only the writing style is editable — the output format is fixed.
+      A style that breaks generation fails safely: the app retries, then falls back to the untagged document.</div>
     </section>
   </body>
 </html>

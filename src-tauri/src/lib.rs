@@ -27,6 +27,8 @@ pub fn run() {
             commands::provider_config::set_provider_config,
             commands::provider_config::get_saved_provider_config,
             commands::provider_config::get_saved_provider_profile,
+            commands::provider_config::get_prompt_templates,
+            commands::provider_config::set_prompt_templates,
             commands::window::open_settings_window,
             commands::remove_payload::remove_payload,
             commands::help::install_help_file,

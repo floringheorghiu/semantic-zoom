@@ -134,6 +134,35 @@ impl Default for ProviderConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomTemplate {
+    pub id: String,
+    pub name: String,
+    pub text: String,
+}
+
+/// Non-secret, non-interpreted prompt-template selection state (Task 8's TS
+/// `PromptTemplatesConfig` mirror). Rust only stores/returns these strings —
+/// it never validates or interprets their content.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PromptTemplates {
+    /// Builtin id or custom id; empty string = "general" (frontend resolves).
+    #[serde(default)]
+    pub selected: String,
+    /// builtin id -> user-tweaked text. Absent key = shipped default text,
+    /// so app updates to shipped templates reach untweaked users.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub overrides: HashMap<String, String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub custom: Vec<CustomTemplate>,
+}
+
+fn is_default_templates(t: &PromptTemplates) -> bool {
+    *t == PromptTemplates::default()
+}
+
 const CONFIG_FILE: &str = "provider-config.json";
 
 /// On-disk shape. `active` is flattened so the file stays byte-compatible
@@ -152,6 +181,8 @@ struct ConfigStore {
     saved: HashMap<ProviderKind, ProviderConfig>,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     saved_providers: HashMap<Provider, ProviderConfig>,
+    #[serde(default, skip_serializing_if = "is_default_templates")]
+    prompt_templates: PromptTemplates,
 }
 
 impl Default for ConfigStore {
@@ -160,6 +191,7 @@ impl Default for ConfigStore {
             active: ProviderConfig::default(),
             saved: HashMap::new(),
             saved_providers: HashMap::new(),
+            prompt_templates: PromptTemplates::default(),
         }
     }
 }
@@ -254,6 +286,31 @@ pub fn get_saved_provider_profile(
     use tauri::Manager;
     let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
     Ok(saved_provider_profile(&dir, provider))
+}
+
+#[tauri::command]
+pub fn get_prompt_templates(app: tauri::AppHandle) -> Result<PromptTemplates, String> {
+    use tauri::Manager;
+    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    Ok(read_store(&dir).prompt_templates)
+}
+
+/// Mutates ONLY `prompt_templates` — `active`/`saved`/`saved_providers` are
+/// read back untouched and rewritten as-is, unlike `write_config` which
+/// rebuilds `active`/`saved`/`saved_providers` for a provider switch.
+#[tauri::command]
+pub fn set_prompt_templates(
+    app: tauri::AppHandle,
+    templates: PromptTemplates,
+) -> Result<(), String> {
+    use tauri::Manager;
+    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let mut store = read_store(&dir);
+    store.prompt_templates = templates;
+    let path = dir.join(CONFIG_FILE);
+    let json = serde_json::to_string_pretty(&store).map_err(|e| e.to_string())?;
+    fs::write(path, json).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -420,6 +477,66 @@ mod tests {
         assert!(ProviderKind::Remote.needs_key());
         assert!(!ProviderKind::Ollama.needs_key());
         assert!(!ProviderKind::CustomLocal.needs_key());
+    }
+
+    #[test]
+    fn prompt_templates_round_trip() {
+        let dir = std::env::temp_dir().join(format!(
+            "szoom-provider-config-test-{}-{}",
+            std::process::id(),
+            "prompt-templates"
+        ));
+        let _ = fs::remove_dir_all(&dir);
+
+        let mut overrides = HashMap::new();
+        overrides.insert("general".to_string(), "tweaked general text".to_string());
+        let templates = PromptTemplates {
+            selected: "prd".to_string(),
+            overrides,
+            custom: vec![CustomTemplate {
+                id: "custom-1".to_string(),
+                name: "My Template".to_string(),
+                text: "Custom template text".to_string(),
+            }],
+        };
+
+        let mut store = read_store(&dir);
+        store.prompt_templates = templates.clone();
+        fs::create_dir_all(&dir).unwrap();
+        let json = serde_json::to_string_pretty(&store).unwrap();
+        fs::write(dir.join(CONFIG_FILE), json).unwrap();
+
+        let reread = read_store(&dir);
+        assert_eq!(reread.prompt_templates, templates);
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn pre_template_config_file_reads_clean() {
+        let dir = std::env::temp_dir().join(format!(
+            "szoom-provider-config-test-{}-{}",
+            std::process::id(),
+            "pre-template"
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        // A file written before `prompt_templates` existed: exactly the
+        // flattened active config, no `promptTemplates` key at all.
+        fs::write(
+            dir.join(CONFIG_FILE),
+            r#"{"kind":"remote","base_url":"https://api.cerebras.ai/v1","model":"llama3.1-8b"}"#,
+        )
+        .unwrap();
+
+        let store = read_store(&dir);
+        assert_eq!(store.active.kind, ProviderKind::Remote);
+        assert_eq!(store.active.base_url, "https://api.cerebras.ai/v1");
+        assert_eq!(store.active.provider, Provider::Cerebras);
+        assert_eq!(store.prompt_templates, PromptTemplates::default());
+
+        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
