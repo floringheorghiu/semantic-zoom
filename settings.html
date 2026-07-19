@@ -36,39 +36,136 @@
       }
       #save { background: #2f6fed; color: white; }
       #remove-key { background: transparent; border: 1px solid color-mix(in srgb, currentColor 25%, transparent); color: inherit; }
+      #tab-bar {
+        display: flex;
+        gap: 4px;
+        padding: 3px;
+        border-radius: 8px;
+        background: color-mix(in srgb, currentColor 6%, transparent);
+        align-self: flex-start;
+      }
+      #tab-bar [role="tab"] {
+        padding: 5px 12px;
+        border-radius: 6px;
+        border: none;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      #tab-bar [role="tab"][aria-selected="true"] {
+        background: var(--sz-accent, #8080ff);
+        color: white;
+      }
+      section[data-tab] { display: flex; flex-direction: column; gap: 12px; }
+      section[data-tab][hidden] { display: none; }
+      #accent-swatches { align-items: center; flex-wrap: wrap; }
+      .swatch {
+        width: 24px;
+        height: 24px;
+        padding: 0;
+        border-radius: 50%;
+        border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+        box-shadow: none;
+        cursor: pointer;
+      }
+      .swatch[data-active="true"] {
+        box-shadow: 0 0 0 2px var(--sz-bg, canvas), 0 0 0 4px var(--sz-accent, #8080ff);
+      }
+      #accent-custom {
+        width: 28px;
+        height: 24px;
+        padding: 0;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      #theme-group {
+        display: flex;
+        gap: 4px;
+        padding: 3px;
+        margin: 0;
+        border: none;
+        border-radius: 8px;
+        background: color-mix(in srgb, currentColor 6%, transparent);
+        align-self: flex-start;
+      }
+      #theme-group label {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 0;
+        padding: 5px 14px;
+        border-radius: 6px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      #theme-group label:has(input:checked) {
+        background: var(--sz-accent, #8080ff);
+        color: white;
+      }
+      #theme-group input[type='radio'] {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+      }
+      #theme-group label:has(input:focus-visible) {
+        outline: 2px solid var(--sz-accent, #8080ff);
+        outline-offset: 1px;
+      }
     </style>
   </head>
   <body>
-    <label for="engine">Generation Engine
-      <select id="engine">
-        <option value="remote">Remote endpoint</option>
-        <option value="custom-local">Custom local server</option>
-        <option value="ollama">Ollama (local)</option>
-      </select>
-    </label>
-    <label for="provider">Provider
-      <select id="provider"></select>
-    </label>
-    <label for="base-url">Base URL
-      <input id="base-url" type="text" placeholder="http://localhost:11434/v1" />
-    </label>
-    <label for="model">Model
-      <select id="model"></select>
-    </label>
-    <div id="model-custom-row" hidden>
-      <label for="model-custom">Custom model name
-        <input id="model-custom" type="text" placeholder="model-name" />
+    <div id="tab-bar" role="tablist">
+      <button role="tab" data-tab="general" aria-selected="true">General</button>
+      <button role="tab" data-tab="inference" aria-selected="false">Inference</button>
+    </div>
+    <section data-tab="general">
+      <label>Accent color
+        <div class="row" id="accent-swatches"></div>
       </label>
-    </div>
-    <div id="key-row" hidden>
-      <label for="api-key">API key
-        <input id="api-key" type="password" autocomplete="off" placeholder="sk-…" />
+      <div>
+        <span style="font-weight: 600; display: block; margin-bottom: 4px;">Appearance</span>
+        <fieldset id="theme-group">
+          <label><input type="radio" name="theme" value="light" /> Light</label>
+          <label><input type="radio" name="theme" value="dark" /> Dark</label>
+          <label><input type="radio" name="theme" value="system" /> System</label>
+        </fieldset>
+      </div>
+      <label><input type="checkbox" id="show-anchors" /> Show anchor IDs</label>
+    </section>
+    <section data-tab="inference" hidden>
+      <label for="engine">Generation Engine
+        <select id="engine">
+          <option value="remote">Remote endpoint</option>
+          <option value="custom-local">Custom local server</option>
+          <option value="ollama">Ollama (local)</option>
+        </select>
       </label>
-    </div>
-    <div class="row">
-      <button id="save" type="button">Save</button>
-      <button id="remove-key" type="button" hidden>Remove key</button>
-    </div>
-    <div id="status-line" role="status"></div>
+      <label for="provider">Provider
+        <select id="provider"></select>
+      </label>
+      <label for="base-url">Base URL
+        <input id="base-url" type="text" placeholder="http://localhost:11434/v1" />
+      </label>
+      <label for="model">Model
+        <select id="model"></select>
+      </label>
+      <div id="model-custom-row" hidden>
+        <label for="model-custom">Custom model name
+          <input id="model-custom" type="text" placeholder="model-name" />
+        </label>
+      </div>
+      <div id="key-row" hidden>
+        <label for="api-key">API key
+          <input id="api-key" type="password" autocomplete="off" placeholder="sk-…" />
+        </label>
+      </div>
+      <div class="row">
+        <button id="save" type="button">Save</button>
+        <button id="remove-key" type="button" hidden>Remove key</button>
+      </div>
+      <div id="status-line" role="status"></div>
+    </section>
   </body>
 </html>
