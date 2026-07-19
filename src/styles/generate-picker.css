@@ -41,7 +41,7 @@
   /* The Figma exports color their paths via var(--fill-0, #8080FF); routing
      that through the accent token keeps the icons on-theme in both light and
      dark mode instead of hardcoding the mock's hex. */
-  --fill-0: var(--sz-accent);
+  --fill-0: var(--sz-content-accent);
 }
 
 .generate-picker__option {
@@ -65,7 +65,7 @@
 }
 
 .generate-picker__option:focus-visible {
-  outline: 2px solid var(--sz-accent);
+  outline: 2px solid var(--sz-content-accent);
   outline-offset: 2px;
 }
 
@@ -109,7 +109,7 @@
 }
 
 .generate-picker__close:focus-visible {
-  outline: 2px solid var(--sz-accent);
+  outline: 2px solid var(--sz-content-accent);
   outline-offset: 2px;
   border-radius: 4px;
 }
