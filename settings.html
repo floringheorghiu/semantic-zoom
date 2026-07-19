@@ -36,39 +36,70 @@
       }
       #save { background: #2f6fed; color: white; }
       #remove-key { background: transparent; border: 1px solid color-mix(in srgb, currentColor 25%, transparent); color: inherit; }
+      #tab-bar {
+        display: flex;
+        gap: 4px;
+        padding: 3px;
+        border-radius: 8px;
+        background: color-mix(in srgb, currentColor 6%, transparent);
+        align-self: flex-start;
+      }
+      #tab-bar [role="tab"] {
+        padding: 5px 12px;
+        border-radius: 6px;
+        border: none;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      #tab-bar [role="tab"][aria-selected="true"] {
+        background: var(--sz-accent, #8080ff);
+        color: white;
+      }
+      section[data-tab] { display: flex; flex-direction: column; gap: 12px; }
+      section[data-tab][hidden] { display: none; }
     </style>
   </head>
   <body>
-    <label for="engine">Generation Engine
-      <select id="engine">
-        <option value="remote">Remote endpoint</option>
-        <option value="custom-local">Custom local server</option>
-        <option value="ollama">Ollama (local)</option>
-      </select>
-    </label>
-    <label for="provider">Provider
-      <select id="provider"></select>
-    </label>
-    <label for="base-url">Base URL
-      <input id="base-url" type="text" placeholder="http://localhost:11434/v1" />
-    </label>
-    <label for="model">Model
-      <select id="model"></select>
-    </label>
-    <div id="model-custom-row" hidden>
-      <label for="model-custom">Custom model name
-        <input id="model-custom" type="text" placeholder="model-name" />
+    <div id="tab-bar" role="tablist">
+      <button role="tab" data-tab="general" aria-selected="true">General</button>
+      <button role="tab" data-tab="inference" aria-selected="false">Inference</button>
+    </div>
+    <section data-tab="general"></section>
+    <section data-tab="inference" hidden>
+      <label for="engine">Generation Engine
+        <select id="engine">
+          <option value="remote">Remote endpoint</option>
+          <option value="custom-local">Custom local server</option>
+          <option value="ollama">Ollama (local)</option>
+        </select>
       </label>
-    </div>
-    <div id="key-row" hidden>
-      <label for="api-key">API key
-        <input id="api-key" type="password" autocomplete="off" placeholder="sk-…" />
+      <label for="provider">Provider
+        <select id="provider"></select>
       </label>
-    </div>
-    <div class="row">
-      <button id="save" type="button">Save</button>
-      <button id="remove-key" type="button" hidden>Remove key</button>
-    </div>
-    <div id="status-line" role="status"></div>
+      <label for="base-url">Base URL
+        <input id="base-url" type="text" placeholder="http://localhost:11434/v1" />
+      </label>
+      <label for="model">Model
+        <select id="model"></select>
+      </label>
+      <div id="model-custom-row" hidden>
+        <label for="model-custom">Custom model name
+          <input id="model-custom" type="text" placeholder="model-name" />
+        </label>
+      </div>
+      <div id="key-row" hidden>
+        <label for="api-key">API key
+          <input id="api-key" type="password" autocomplete="off" placeholder="sk-…" />
+        </label>
+      </div>
+      <div class="row">
+        <button id="save" type="button">Save</button>
+        <button id="remove-key" type="button" hidden>Remove key</button>
+      </div>
+      <div id="status-line" role="status"></div>
+    </section>
   </body>
 </html>
