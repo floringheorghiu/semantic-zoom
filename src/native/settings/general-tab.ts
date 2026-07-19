@@ -16,55 +16,49 @@ const ACCENT_PRESETS = ['#8080ff', '#ff6b35', '#2fa26e', '#e0529c', '#d9a514', '
  * Render the swatch picker into `#accent-swatches`: one button per preset
  * plus a native color input for custom values. Clicking a swatch or picking
  * a custom color both call `setAccentPref`, which applies + persists +
- * cross-window syncs (state/accent.ts). The active swatch/input reflects
- * `getAccentPref()` and re-syncs on `storage` events fired by the OTHER
- * window (e.g. the main window's titlebar, if it ever grows a picker).
+ * notifies subscribers (state/accent.ts). Returns a `reflectAccent` callback
+ * so the caller can pass it into the entry's `initAccent()`, the same
+ * pattern `initThemeRadios()` uses for `initTheme()` — keeps the active
+ * swatch in sync when the pref changes externally, without this module
+ * opening its own `storage` listener.
  */
-function initAccentSwatches(): void {
+function initAccentSwatches(): (hex: string) => void {
   const container = document.getElementById('accent-swatches');
-  if (!container) return;
-
   const swatchButtons = new Map<string, HTMLButtonElement>();
+  let customInput: HTMLInputElement | undefined;
 
-  for (const hex of ACCENT_PRESETS) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'swatch';
-    button.style.background = hex;
-    button.setAttribute('aria-label', hex);
-    button.addEventListener('click', () => {
-      setAccentPref(hex);
-      refreshActive();
-    });
-    container.appendChild(button);
-    swatchButtons.set(hex, button);
-  }
-
-  const customInput = document.createElement('input');
-  customInput.type = 'color';
-  customInput.id = 'accent-custom';
-  customInput.setAttribute('aria-label', 'Custom accent color');
-  customInput.addEventListener('input', () => {
-    setAccentPref(customInput.value);
-    refreshActive();
-  });
-  container.appendChild(customInput);
-
-  function refreshActive(): void {
-    const current = getAccentPref();
+  function refreshActive(current: string): void {
     for (const [hex, button] of swatchButtons) {
       const active = hex.toLowerCase() === current.toLowerCase();
       if (active) button.setAttribute('data-active', 'true');
       else button.removeAttribute('data-active');
     }
-    customInput.value = current;
+    if (customInput) customInput.value = current;
   }
 
-  refreshActive();
-  window.addEventListener('storage', (event) => {
-    if (event.key !== null && event.key !== 'sz-accent') return;
-    refreshActive();
-  });
+  if (container) {
+    for (const hex of ACCENT_PRESETS) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'swatch';
+      button.style.background = hex;
+      button.setAttribute('aria-label', hex);
+      button.addEventListener('click', () => setAccentPref(hex));
+      container.appendChild(button);
+      swatchButtons.set(hex, button);
+    }
+
+    customInput = document.createElement('input');
+    customInput.type = 'color';
+    customInput.id = 'accent-custom';
+    customInput.setAttribute('aria-label', 'Custom accent color');
+    customInput.addEventListener('input', () => setAccentPref(customInput!.value));
+    container.appendChild(customInput);
+
+    refreshActive(getAccentPref());
+  }
+
+  return refreshActive;
 }
 
 /**
@@ -112,13 +106,20 @@ function initAnchorVisibilityCheckbox(): void {
 }
 
 /**
- * Wire every General tab control. Returns the theme-radio sync callback so
- * the settings entry can feed it into `initTheme()`, keeping radios
- * live-synced with external theme changes.
+ * Wire every General tab control. Returns the sync callbacks so the
+ * settings entry can feed them into `initTheme()`/`initAccent()`, keeping
+ * this window's controls live-synced with prefs changed elsewhere (the
+ * main-window titlebar switcher, or another window's `storage` event).
+ * Anchor visibility has no returned callback — nothing in this window
+ * needs to observe it changing live; `state/anchor-visibility.ts`'s own
+ * `storage` listener keeps the DOM attribute correct regardless.
  */
-export function initGeneralTab(): (pref: ThemePref) => void {
-  initAccentSwatches();
-  const reflectRadios = initThemeRadios();
+export function initGeneralTab(): {
+  reflectTheme: (pref: ThemePref) => void;
+  reflectAccent: (hex: string) => void;
+} {
+  const reflectAccent = initAccentSwatches();
+  const reflectTheme = initThemeRadios();
   initAnchorVisibilityCheckbox();
-  return reflectRadios;
+  return { reflectTheme, reflectAccent };
 }
