@@ -80,6 +80,35 @@
         border-radius: 6px;
         cursor: pointer;
       }
+      #theme-group {
+        display: flex;
+        gap: 4px;
+        padding: 3px;
+        margin: 0;
+        border: none;
+        border-radius: 8px;
+        background: color-mix(in srgb, currentColor 6%, transparent);
+        align-self: flex-start;
+      }
+      #theme-group label {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 0;
+        padding: 5px 14px;
+        border-radius: 6px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      #theme-group label:has(input:checked) {
+        background: var(--sz-accent, #8080ff);
+        color: white;
+      }
+      #theme-group input[type='radio'] {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+      }
     </style>
   </head>
   <body>
@@ -91,6 +120,14 @@
       <label>Accent color
         <div class="row" id="accent-swatches"></div>
       </label>
+      <div>
+        <span style="font-weight: 600; display: block; margin-bottom: 4px;">Appearance</span>
+        <fieldset id="theme-group">
+          <label><input type="radio" name="theme" value="light" /> Light</label>
+          <label><input type="radio" name="theme" value="dark" /> Dark</label>
+          <label><input type="radio" name="theme" value="system" /> System</label>
+        </fieldset>
+      </div>
     </section>
     <section data-tab="inference" hidden>
       <label for="engine">Generation Engine
