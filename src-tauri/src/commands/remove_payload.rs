@@ -101,6 +101,7 @@ pub(crate) fn remove_payload_at(
         milestones: None,
         sections: None,
         error: None,
+        template: None,
     };
     if let Err(e) = generation_history::append_run(history_dir, path, event) {
         eprintln!("remove_payload: history append failed (removal itself succeeded): {e}");
