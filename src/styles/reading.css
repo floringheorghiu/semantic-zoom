@@ -197,6 +197,10 @@
   margin-bottom: 0.35rem;
 }
 
+/* General-settings toggle: attribute stamped by state/anchor-visibility.ts.
+   Instant hide — no transition (opacity-only animation rule). */
+:root[data-hide-anchors] .sid-label { display: none; }
+
 /* ---------- Story / Section summary cards (Ask 3) ---------- */
 
 .summary-title {

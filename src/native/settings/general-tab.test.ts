@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { getThemePref } from '../../state/theme';
+import { getShowAnchors } from '../../state/anchor-visibility';
 import { initGeneralTab } from './general-tab';
 
 function mountGeneral(): void {
@@ -14,7 +15,11 @@ function mountGeneral(): void {
 }
 
 describe('general tab theme radios', () => {
-  beforeEach(() => { window.localStorage.clear(); mountGeneral(); });
+  beforeEach(() => {
+    window.localStorage.clear();
+    document.documentElement.removeAttribute('data-hide-anchors');
+    mountGeneral();
+  });
   it('reflects and writes the theme pref', () => {
     initGeneralTab();
     const system = document.querySelector<HTMLInputElement>('input[name="theme"][value="system"]')!;
@@ -35,5 +40,15 @@ describe('general tab theme radios', () => {
     expect(dark.checked).toBe(true);
     expect(light.checked).toBe(false);
     expect(system.checked).toBe(false);
+  });
+
+  it('reflects and writes the show-anchors pref', () => {
+    initGeneralTab();
+    const checkbox = document.getElementById('show-anchors') as HTMLInputElement;
+    expect(checkbox.checked).toBe(true); // default pref
+
+    checkbox.checked = false;
+    checkbox.dispatchEvent(new Event('change'));
+    expect(getShowAnchors()).toBe(false);
   });
 });

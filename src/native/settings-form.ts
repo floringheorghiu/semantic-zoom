@@ -1,6 +1,7 @@
 // settings-form.ts — settings window entry: theme/accent sync + tab wiring.
 import { initTheme } from '../state/theme';
 import { initAccent } from '../state/accent';
+import { initAnchorVisibility } from '../state/anchor-visibility';
 import { initTabs } from './settings/tabs';
 import { initInferenceTab } from './settings/inference-tab';
 import { initGeneralTab } from './settings/general-tab';
@@ -13,5 +14,6 @@ import { initGeneralTab } from './settings/general-tab';
 const reflectRadios = initGeneralTab();
 initTheme((pref) => reflectRadios(pref));
 initAccent();
+initAnchorVisibility();
 initTabs(document.body);
 initInferenceTab();
