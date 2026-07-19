@@ -5,6 +5,7 @@ import { initAnchorVisibility } from '../state/anchor-visibility';
 import { initTabs } from './settings/tabs';
 import { initInferenceTab } from './settings/inference-tab';
 import { initGeneralTab } from './settings/general-tab';
+import { initPromptTab } from './settings/prompt-tab';
 
 // `settings.html` loads this script as `type="module" defer`, so the DOM
 // (including the static `#theme-group` markup) is already fully parsed
@@ -18,3 +19,4 @@ initAccent(reflectAccent);
 initAnchorVisibility();
 initTabs(document.body);
 initInferenceTab();
+void initPromptTab();

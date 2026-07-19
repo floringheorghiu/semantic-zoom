@@ -4,8 +4,16 @@
 // together. Kept out of src-tauri (Rust never sees document content beyond
 // what it relays over HTTP) and out of the CLI tools (this prompt is
 // Engine B's job, not the hand-authoring skill's).
+//
+// Split (Task 6) into a locked contract (role framing, HARD RULES, TASK
+// step 1 grouping rules, and the OUTPUT SHAPE) and a swappable editorial
+// layer (TASK steps 2-3: per-section prose guidance and the meta summary's
+// subheadings). buildSystemPrompt() always re-wraps whatever editorial text
+// is given with the same locked header/footer, so the format contract
+// (HARD RULES / grouping / OUTPUT SHAPE) is byte-identical no matter which
+// template a user picks.
 
-export const SYNTHESIS_SYSTEM_PROMPT = `You are the section/story synthesizer for Semantic Zoom, a tool that lets a
+export const CONTRACT_HEADER = `You are the section/story synthesizer for Semantic Zoom, a tool that lets a
 reader view a markdown document at three zoom levels: raw paragraphs (level
 0, already written — not your job), plain-English sections (level −1, your
 job), and a one-screen story (level −2, your job).
@@ -63,7 +71,9 @@ TASK:
       where the subject clearly shifts.
    Every section must contain at least one paragraph.
 
-2. For each section write:
+`;
+
+export const DEFAULT_EDITORIAL = `2. For each section write:
    - "title": ≤8 words, plain English, no jargon, no code syntax. Someone
      skimming only the titles in order should get an accurate map of the
      document.
@@ -78,7 +88,9 @@ TASK:
      "**Accomplished:**", "**Blockers:**", "**Next steps:**" — each followed
      by 1–4 bullet points grounded only in the paragraph content. If a
      document genuinely has nothing for one of these (e.g. a pure reference
-     doc with no blockers), write a single bullet: "None noted."
+     doc with no blockers), write a single bullet: "None noted."`;
+
+export const CONTRACT_FOOTER = `
 
 OUTPUT SHAPE (strict JSON, nothing else):
 {
@@ -87,6 +99,99 @@ OUTPUT SHAPE (strict JSON, nothing else):
     { "children": ["<id copied from input>", "..."], "title": "string", "body": "string" }
   ]
 }`;
+
+/** Assembles a full system prompt: locked header + swappable editorial + locked footer. */
+export function buildSystemPrompt(editorial = DEFAULT_EDITORIAL) {
+  return CONTRACT_HEADER + editorial + CONTRACT_FOOTER;
+}
+
+/**
+ * Built-in editorial templates a user can pick in Settings without writing
+ * their own. `general`'s text IS `DEFAULT_EDITORIAL` — the ratified
+ * default this whole prompt was validated against.
+ */
+export const BUILTIN_TEMPLATES = [
+  { id: 'general', name: 'General', text: DEFAULT_EDITORIAL },
+  {
+    id: 'prd',
+    name: 'PRD / Spec',
+    text: `2. For each section write:
+   - "title": ≤8 words, plain English, no jargon, no code syntax. Someone
+     skimming only the titles in order should get an accurate map of the
+     document.
+   - "body": 2–4 sentences focused on WHAT is required and WHY. Lead with
+     requirements and decisions; name what is decided versus explicitly
+     open. Describe user-facing behavior in plain terms; compress
+     boilerplate (background, glossary, legal) to a single sentence.
+
+3. Write exactly one "meta" object summarizing the entire document:
+   - "title": the document's overall one-line purpose.
+   - "body": plain markdown with exactly three subheadings, in this order:
+     "**Decided:**", "**Open questions:**", "**Next steps:**" — each
+     followed by 1–4 bullet points grounded only in the paragraph content.
+     If a document genuinely has nothing for one of these (e.g. a pure
+     reference doc with no blockers), write a single bullet: "None noted."`,
+  },
+  {
+    id: 'impl-plan',
+    name: 'Implementation plan',
+    text: `2. For each section write:
+   - "title": ≤8 words, plain English, no jargon, no code syntax. Someone
+     skimming only the titles in order should get an accurate map of the
+     document.
+   - "body": 2–4 sentences per section surfacing the phase's goal, its
+     dependencies on other phases, and its completion criterion ("done
+     when"). Summarize code blocks by their intent — never restate code.
+     Call out anything the plan marks as risky or deferred.
+
+3. Write exactly one "meta" object summarizing the entire document:
+   - "title": the document's overall one-line purpose.
+   - "body": plain markdown with exactly three subheadings, in this order:
+     "**Phases:**", "**Blockers:**", "**Next steps:**" — each followed by
+     1–4 bullet points grounded only in the paragraph content. If a
+     document genuinely has nothing for one of these (e.g. a pure
+     reference doc with no blockers), write a single bullet: "None noted."`,
+  },
+  {
+    id: 'task-report',
+    name: 'Task / progress report',
+    text: `2. For each section write:
+   - "title": ≤8 words, plain English, no jargon, no code syntax. Someone
+     skimming only the titles in order should get an accurate map of the
+     document.
+   - "body": 1–3 terse sentences per section: what was done, what it proved.
+     Prefer past tense and concrete outcomes over process narration.
+
+3. Write exactly one "meta" object summarizing the entire document:
+   - "title": the document's overall one-line purpose.
+   - "body": plain markdown with exactly three subheadings, in this order:
+     "**Accomplished:**", "**Blockers:**", "**Next steps:**" — each
+     followed by 1–4 bullet points grounded only in the paragraph content.
+     Be strict: an item belongs under Accomplished only if the document
+     states it was verified or completed, not merely attempted. If a
+     document genuinely has nothing for one of these (e.g. a pure
+     reference doc with no blockers), write a single bullet: "None noted."`,
+  },
+  {
+    id: 'research',
+    name: 'Research / analysis',
+    text: `2. For each section write:
+   - "title": ≤8 words, plain English, no jargon, no code syntax. Someone
+     skimming only the titles in order should get an accurate map of the
+     document.
+   - "body": 2–4 sentences leading with the FINDING, then the evidence for it.
+     Where the document states a confidence level or an unresolved
+     uncertainty, carry it into the summary rather than flattening it.
+
+3. Write exactly one "meta" object summarizing the entire document:
+   - "title": the document's overall one-line purpose.
+   - "body": plain markdown with exactly three subheadings, in this order:
+     "**Findings:**", "**Uncertainties:**", "**Next steps:**" — each
+     followed by 1–4 bullet points grounded only in the paragraph content.
+     If a document genuinely has nothing for one of these (e.g. a pure
+     reference doc with no blockers), write a single bullet: "None noted."`,
+  },
+];
 
 /** Truncation rule from the synthesis contract §"Required wrapper" step 3. */
 export function truncateForPrompt(text) {
