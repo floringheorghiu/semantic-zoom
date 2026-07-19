@@ -25,5 +25,6 @@ describe('buildSystemPrompt', () => {
       expect(p).toContain('Sections must be contiguous ranges');
       expect(p).toContain('"meta": { "title": "string", "body": "string" }');
     }
+    expect(BUILTIN_TEMPLATES.find((t) => t.id === 'general')?.text).toBe(DEFAULT_EDITORIAL);
   });
 });
