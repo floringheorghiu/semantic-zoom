@@ -175,6 +175,26 @@ describe('prompt tab', () => {
     expect('prd' in templates.overrides).toBe(false);
   });
 
+  it('Restore sets config.selected to the restored template, even without a prior Save', async () => {
+    await initPromptTab();
+    const select = el<HTMLSelectElement>('template-select');
+    const restoreButton = el<HTMLButtonElement>('template-restore');
+
+    // config.selected loads as 'general' (seededConfig). Select 'prd' — an
+    // overridden builtin — WITHOUT clicking Save, then click Restore.
+    select.value = 'prd';
+    select.dispatchEvent(new Event('change'));
+
+    restoreButton.click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const call = invokeMock.mock.calls.find((c) => c[0] === 'set_prompt_templates');
+    expect(call).toBeDefined();
+    const templates = call![1].templates;
+    expect(templates.selected).toBe('prd');
+  });
+
   it('Add custom… prompts for a name, seeds text from General, appends and selects it', async () => {
     const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('New style');
     await initPromptTab();
