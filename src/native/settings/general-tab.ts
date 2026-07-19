@@ -1,10 +1,9 @@
 // general-tab.ts — General tab controls for the settings window.
 //
 // Bundles alone into settings.html, same discipline as inference-tab.ts:
-// never imports the viewport, store, or engine modules. Task 2 adds the
-// accent-color swatch picker; tasks 3 and 4 extend this file with the theme
-// radios and the anchor-visibility checkbox as their own sections — each
-// kept in its own init function so they stay cleanly separable.
+// never imports the viewport, store, or engine modules. The accent-color
+// swatch picker, theme radios, and anchor-visibility checkbox each own their
+// own init function, kept cleanly separable.
 
 import { getAccentPref, setAccentPref } from '../../state/accent';
 import { getThemePref, setThemePref, type ThemePref } from '../../state/theme';
