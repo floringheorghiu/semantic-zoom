@@ -1,7 +1,7 @@
 // src/ui/active-group.ts
 //
 // The `data-active` marker for the group under the reading focus (plan §4.6).
-// CSS turns that attribute into the Figma accent border (`--sz-accent-border`)
+// CSS turns that attribute into the Figma accent border (`--sz-content-accent-border`)
 // on the MetaCard at k=−2 and on the section card at k=0/−1.
 //
 // WHY THIS EXISTS SEPARATELY FROM focus-mask.ts

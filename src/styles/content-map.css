@@ -152,7 +152,7 @@
 }
 
 .map-bar:focus-visible {
-  outline: 1px solid var(--sz-accent);
+  outline: 1px solid var(--sz-content-accent);
   outline-offset: 1px;
 }
 
