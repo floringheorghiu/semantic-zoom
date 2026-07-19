@@ -30,6 +30,10 @@ export interface GenerationRun {
   milestones?: number;
   sections?: number;
   error?: string;
+  /** Display name of the summarization template this run used (Task 8/12
+      — e.g. "PRD / Spec"). Absent on runs recorded before PR 3, which must
+      render with no Template row at all rather than "Template: undefined". */
+  template?: string;
 }
 
 export interface GenerationTooltipOptions {
@@ -136,6 +140,11 @@ function buildEntry(run: GenerationRun): HTMLElement {
   entry.appendChild(row('Duration:', formatDuration(run.durationMs)));
   entry.appendChild(row('Created:', formatCreated(run.finishedAt)));
   entry.appendChild(row('Version:', String(run.version)));
+  // Older runs (recorded before PR 3) carry no `template` field — omit the
+  // row entirely rather than render "Template: undefined".
+  if (run.template !== undefined) {
+    entry.appendChild(row('Template:', run.template));
+  }
   if (run.attempts > 0) {
     // Provider-facing facts exist only if a provider was actually called.
     if (run.promptTokens !== undefined || run.completionTokens !== undefined) {
