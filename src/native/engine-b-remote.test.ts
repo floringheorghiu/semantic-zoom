@@ -19,7 +19,31 @@ import {
 
 beforeEach(() => {
   invokeMock.mockReset();
+  mockLlmResponses(); // default: get_prompt_templates -> null, llm_complete -> { content: 'not json' }
 });
+
+/**
+ * Task 8: `synthesize()` now issues a `get_prompt_templates` invoke at run
+ * start, before any `llm_complete` call. Tests below care about the
+ * `llm_complete` response sequence, not the template config, so this helper
+ * routes by command: `get_prompt_templates` always resolves to `null`
+ * (falls back to the 'general' builtin, per resolveTemplate's contract),
+ * and `llm_complete` responses are supplied by the caller, one per call, in
+ * order — the same shape the old `mockResolvedValueOnce` chains had, just
+ * command-aware so the extra invoke doesn't shift the queue by one.
+ */
+function mockLlmResponses(...responses: unknown[]): void {
+  let call = 0;
+  invokeMock.mockImplementation((cmd: string) => {
+    if (cmd === 'get_prompt_templates') return Promise.resolve(null);
+    if (cmd === 'llm_complete') {
+      const next = responses.length > 0 ? responses[Math.min(call, responses.length - 1)] : { content: 'not json' };
+      call++;
+      return Promise.resolve(next);
+    }
+    return Promise.resolve(undefined);
+  });
+}
 
 function signal(): AbortSignal {
   return new AbortController().signal;
@@ -46,17 +70,23 @@ test('oversized document is refused with a clear message, per D10 (no silent tru
   ).rejects.toThrow(/too large.*context limit/i);
 });
 
-test('oversized refusal happens before any provider call', async () => {
+test('oversized refusal happens before any llm_complete call', async () => {
+  // The template-config fetch (get_prompt_templates) DOES happen before the
+  // pre-flight size check (Task 8: the resolved template's text is part of
+  // what's measured) — it's the provider-facing llm_complete call the D10
+  // refusal must precede, and that invariant still holds.
+  mockLlmResponses();
   await remoteSynthesizer.synthesize(oversizedDoc(), signal()).catch(() => {});
-  expect(invokeMock).not.toHaveBeenCalled();
+  expect(invokeMock.mock.calls.some(([cmd]) => cmd === 'llm_complete')).toBe(false);
 });
 
 test('a failed run reports meta for the FINAL attempt (count, temperature, usage)', async () => {
   // Every attempt returns unparseable JSON → the full retry ladder runs.
-  invokeMock
-    .mockResolvedValueOnce({ content: 'not json', usage: { promptTokens: 10, completionTokens: 1 } })
-    .mockResolvedValueOnce({ content: 'still not json', usage: { promptTokens: 11, completionTokens: 2 } })
-    .mockResolvedValueOnce({ content: 'nope', usage: { promptTokens: 12, completionTokens: 3 } });
+  mockLlmResponses(
+    { content: 'not json', usage: { promptTokens: 10, completionTokens: 1 } },
+    { content: 'still not json', usage: { promptTokens: 11, completionTokens: 2 } },
+    { content: 'nope', usage: { promptTokens: 12, completionTokens: 3 } },
+  );
 
   await expect(
     remoteSynthesizer.synthesize('# Doc\n\nOne real paragraph.', signal()),
@@ -71,7 +101,7 @@ test('a failed run reports meta for the FINAL attempt (count, temperature, usage
 
 test('meta is null after a pre-flight refusal (no provider call to describe)', async () => {
   // Seed stale meta from a previous failed run…
-  invokeMock.mockResolvedValue({ content: 'not json' });
+  mockLlmResponses({ content: 'not json' });
   await remoteSynthesizer.synthesize('# Doc\n\nA paragraph.', signal()).catch(() => {});
   expect(lastSynthesisRunMeta()).not.toBeNull();
 
@@ -81,7 +111,7 @@ test('meta is null after a pre-flight refusal (no provider call to describe)', a
 });
 
 test('a provider response without usage yields usage: null, not an error', async () => {
-  invokeMock.mockResolvedValue({ content: 'not json' });
+  mockLlmResponses({ content: 'not json' });
   await remoteSynthesizer.synthesize('# Doc\n\nA paragraph.', signal()).catch(() => {});
   expect(lastSynthesisRunMeta()!.usage).toBeNull();
 });

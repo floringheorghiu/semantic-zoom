@@ -18,6 +18,7 @@ import { prePayloadSource } from './zoom-tools/marker.mjs';
 import { buildSystemPrompt, buildUserMessage } from './zoom-tools/synthesis-prompt.mjs';
 import { checkOutputContract, normalizeSynthesisOutput, stripMarkdownFence, toAssemblerLayers } from './zoom-tools/output-contract.mjs';
 import type { SegmentBlock } from './zoom-tools/types';
+import { resolveTemplate, type PromptTemplatesConfig } from './template-resolve';
 
 const MAX_ATTEMPTS = 3;
 
@@ -55,6 +56,10 @@ export interface SynthesisRunMeta {
   temperature: number;
   /** Provider-reported usage of the final attempt, if it sent any. */
   usage: { promptTokens?: number; completionTokens?: number } | null;
+  /** Display name of the resolved summarization template this run used
+      (Task 8). Recorded into generation history starting PR 3; harmless
+      extra field on the meta object until then. */
+  template: string;
 }
 
 let lastRunMeta: SynthesisRunMeta | null = null;
@@ -105,9 +110,15 @@ export const remoteSynthesizer: Synthesizer = {
     const inputIds = blocks.map((b) => b.id);
     const title = deriveTitle(blocks);
     const baseUserMessage = buildUserMessage(title, blocks);
-    // Built once per run — Task 8 makes this template-aware (user's chosen
-    // editorial layer); for now it's always the default (ratified) template.
-    const systemPrompt = buildSystemPrompt();
+
+    // Template resolution (Task 8): fetch the user's saved template config
+    // and resolve it to one editorial text, used for BOTH the token estimate
+    // below and every llm_complete call this run makes. `.catch(() => null)`
+    // means a config read failure degrades to the 'general' default rather
+    // than failing the whole run — resolveTemplate(null) never throws.
+    const templatesConfig = await invoke<PromptTemplatesConfig | null>('get_prompt_templates').catch(() => null);
+    const tpl = resolveTemplate(templatesConfig);
+    const systemPrompt = buildSystemPrompt(tpl.text);
 
     // Refuse BEFORE the first provider call — the whole model input (system
     // prompt + document-bearing user message), not just the raw source, is
@@ -141,7 +152,7 @@ export const remoteSynthesizer: Synthesizer = {
         temperature,
       });
       const responseText = completion.content;
-      lastRunMeta = { attempts: attempt, temperature, usage: completion.usage ?? null };
+      lastRunMeta = { attempts: attempt, temperature, usage: completion.usage ?? null, template: tpl.name };
 
       checkAborted(signal);
 
