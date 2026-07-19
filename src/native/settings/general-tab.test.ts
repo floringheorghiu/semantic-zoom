@@ -23,4 +23,17 @@ describe('general tab theme radios', () => {
     dark.click();
     expect(getThemePref()).toBe('dark');
   });
+
+  it('reflects an external pref change via the returned callback', () => {
+    const reflectRadios = initGeneralTab();
+    const light = document.querySelector<HTMLInputElement>('input[name="theme"][value="light"]')!;
+    const dark = document.querySelector<HTMLInputElement>('input[name="theme"][value="dark"]')!;
+    const system = document.querySelector<HTMLInputElement>('input[name="theme"][value="system"]')!;
+
+    reflectRadios('dark');
+
+    expect(dark.checked).toBe(true);
+    expect(light.checked).toBe(false);
+    expect(system.checked).toBe(false);
+  });
 });
