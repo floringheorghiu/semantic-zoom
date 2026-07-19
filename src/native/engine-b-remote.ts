@@ -15,7 +15,7 @@ import { segment } from './zoom-tools/segment.mjs';
 import { buildLookupTable, AssembleError } from './zoom-tools/assemble.mjs';
 import { checkLayers } from './zoom-tools/check-layers.mjs';
 import { prePayloadSource } from './zoom-tools/marker.mjs';
-import { SYNTHESIS_SYSTEM_PROMPT, buildUserMessage } from './zoom-tools/synthesis-prompt.mjs';
+import { buildSystemPrompt, buildUserMessage } from './zoom-tools/synthesis-prompt.mjs';
 import { checkOutputContract, normalizeSynthesisOutput, stripMarkdownFence, toAssemblerLayers } from './zoom-tools/output-contract.mjs';
 import type { SegmentBlock } from './zoom-tools/types';
 
@@ -105,12 +105,15 @@ export const remoteSynthesizer: Synthesizer = {
     const inputIds = blocks.map((b) => b.id);
     const title = deriveTitle(blocks);
     const baseUserMessage = buildUserMessage(title, blocks);
+    // Built once per run — Task 8 makes this template-aware (user's chosen
+    // editorial layer); for now it's always the default (ratified) template.
+    const systemPrompt = buildSystemPrompt();
 
     // Refuse BEFORE the first provider call — the whole model input (system
     // prompt + document-bearing user message), not just the raw source, is
     // what has to fit. Corrective retries only append a short violation note,
     // so the pre-flight estimate stands for all attempts.
-    const inputTokens = estimateTokens(SYNTHESIS_SYSTEM_PROMPT + baseUserMessage);
+    const inputTokens = estimateTokens(systemPrompt + baseUserMessage);
     if (inputTokens > MAX_INPUT_TOKENS) {
       throw new Error(
         `Document is too large to generate a summary: ~${inputTokens.toLocaleString()} tokens ` +
@@ -132,7 +135,7 @@ export const remoteSynthesizer: Synthesizer = {
       // attempts before this was wired in.
       const temperature = TEMPERATURE_BY_ATTEMPT[attempt - 1] ?? 0.6;
       const completion = await invoke<LlmCompletion>('llm_complete', {
-        systemPrompt: SYNTHESIS_SYSTEM_PROMPT,
+        systemPrompt,
         userMessage,
         jsonMode: true,
         temperature,
