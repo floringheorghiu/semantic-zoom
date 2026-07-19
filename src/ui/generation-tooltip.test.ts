@@ -116,6 +116,28 @@ test('a failed run quotes the full error and shows the real attempt count', () =
   handle.teardown();
 });
 
+test('a run carrying a template (Task 12) renders a Template row with its name', () => {
+  const { anchor, handle } = mount([successRun({ template: 'PRD / Spec' })]);
+  hoverOpen(anchor);
+
+  const card = document.querySelector('.generation-tooltip')!;
+  expect(card.textContent).toContain('Template:');
+  expect(card.textContent).toContain('PRD / Spec');
+
+  handle.teardown();
+});
+
+test('an older run with no template field omits the Template row entirely', () => {
+  const { anchor, handle } = mount([successRun()]); // no `template` — pre-PR-3 run
+  hoverOpen(anchor);
+
+  const card = document.querySelector('.generation-tooltip')!;
+  expect(card.textContent).not.toContain('Template:');
+  expect(card.textContent).not.toContain('undefined');
+
+  handle.teardown();
+});
+
 test('remote runs show the endpoint host; custom-local its own label', () => {
   const { anchor, handle } = mount([
     successRun({ providerKind: 'remote', baseUrl: 'https://api.cerebras.ai/v1' }),

@@ -71,6 +71,20 @@ export function lastSynthesisRunMeta(): SynthesisRunMeta | null {
 }
 
 /**
+ * The per-document template override (Task 8's `resolveTemplate` 2nd
+ * param) for the NEXT synthesize() call — a side channel for the same
+ * reason `lastRunMeta` is one: the `Synthesizer` interface (engine-b.ts) is
+ * the stable seam and never gains provider-specific parameters. main.ts
+ * fetches `get_doc_template(docPath)` and calls `setDocTemplateId` with the
+ * result immediately before each `remoteSynthesizer.synthesize()` call.
+ */
+let pendingDocTemplateId: string | null = null;
+
+export function setDocTemplateId(id: string | null): void {
+  pendingDocTemplateId = id;
+}
+
+/**
  * Token/cost ceiling (D10, plan §8.6): v1 refuses documents over the model's
  * context limit with a clear message — no silent truncation or chunking.
  * ProviderConfig carries no per-model context size, so v1 uses a fixed
@@ -117,7 +131,7 @@ export const remoteSynthesizer: Synthesizer = {
     // means a config read failure degrades to the 'general' default rather
     // than failing the whole run — resolveTemplate(null) never throws.
     const templatesConfig = await invoke<PromptTemplatesConfig | null>('get_prompt_templates').catch(() => null);
-    const tpl = resolveTemplate(templatesConfig);
+    const tpl = resolveTemplate(templatesConfig, pendingDocTemplateId);
     const systemPrompt = buildSystemPrompt(tpl.text);
 
     // Refuse BEFORE the first provider call — the whole model input (system

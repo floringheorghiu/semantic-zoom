@@ -44,7 +44,7 @@ import {
   type GeneratePickerChoice,
   type GeneratePickerHandle,
 } from './ui/generate-picker';
-import { remoteSynthesizer, lastSynthesisRunMeta } from './native/engine-b-remote';
+import { remoteSynthesizer, lastSynthesisRunMeta, setDocTemplateId } from './native/engine-b-remote';
 import {
   mountGenerationTooltip,
   type GenerationRun,
@@ -84,6 +84,31 @@ const accentInitTeardown = initAccent();
 // sync, state/anchor-visibility.ts). No UI in the main window subscribes to
 // it yet, so no callback is needed here.
 const anchorVisibilityInitTeardown = initAnchorVisibility();
+
+// Cross-window "current document" bridge (Task 12): the settings webview's
+// Prompt tab needs to know which document is open — to enable "This
+// document" scope and to fetch/set its per-doc template override — without
+// a new Rust/TS crossing (the plan names exactly three: load_document,
+// watch_directory, doc://changed). Same pattern as state/theme.ts: both
+// webviews share the app origin's localStorage, so writing this key here
+// and reading it (+ listening for `storage`) in prompt-tab.ts is enough.
+// Rust stays out of "current doc" tracking entirely — this is view truth.
+const CURRENT_DOC_KEY = 'sz-current-doc';
+
+function setCurrentDocForSettings(path: string | null): void {
+  try {
+    if (path === null) window.localStorage.removeItem(CURRENT_DOC_KEY);
+    else window.localStorage.setItem(CURRENT_DOC_KEY, path);
+  } catch {
+    // Non-persistent session: the settings window simply won't see doc
+    // scope as available — not worth failing the document load over.
+  }
+}
+// localStorage outlives the process — clear any stale path left over from a
+// prior session that quit without going through closeDocument (⌘W), so a
+// fresh launch's empty state doesn't lie to the settings window about a
+// document being open.
+setCurrentDocForSettings(null);
 
 // --- session state (the RxJS store arrives in Task 2.1; direct wiring for now) ---
 let currentLevel: ZoomLevel = 0;
@@ -228,6 +253,7 @@ async function recordGenerationRun(
     milestones: table ? table.order.meta.length : undefined,
     sections: table ? table.order.sections.length : undefined,
     error,
+    template: meta?.template,
   };
   try {
     generationRuns = await invoke<GenerationRun[]>('append_generation_run', {
@@ -371,6 +397,20 @@ async function handleGenerate(): Promise<void> {
   } catch (err) {
     console.warn('handleGenerate: could not read provider config for history:', err);
   }
+  if (controller.signal.aborted) return;
+
+  // Per-document template override (Task 12): resolveTemplate's 2nd param.
+  // Fetched fresh per run (a Settings-window edit mid-run must not relabel
+  // it, same reasoning as runConfig above) and handed to engine-b-remote.ts
+  // via its side-channel setter — the Synthesizer interface itself never
+  // gains this parameter (see setDocTemplateId's doc comment).
+  let docTemplateId: string | null = null;
+  try {
+    docTemplateId = await invoke<string | null>('get_doc_template', { docPath: currentPath });
+  } catch (err) {
+    console.warn('handleGenerate: could not read doc template override:', err);
+  }
+  setDocTemplateId(docTemplateId);
   if (controller.signal.aborted) return;
 
   actions$.next(synthesisStarted());
@@ -1097,6 +1137,7 @@ function closeDocument(): void {
   }
 
   currentPath = null;
+  setCurrentDocForSettings(null); // Task 12: retract doc-scoped templates from the settings window
   currentResult = null;
   currentTable = null;
   currentIndex = null;
@@ -1129,6 +1170,7 @@ function closeDocument(): void {
 
 export async function openFile(path: string): Promise<void> {
   currentPath = path; // remembered so `doc://changed` can silently reload it (§5.3)
+  setCurrentDocForSettings(path); // Task 12: lets the settings window offer doc-scoped templates
   // Title-bar filename (Figma 104-3409): the basename, window-centered.
   docFilenameEl.textContent = path.split('/').pop() ?? path;
   // History BEFORE applyResult — the untagged pill's dot state (and the

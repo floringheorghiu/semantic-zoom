@@ -72,6 +72,11 @@ pub struct GenerationRun {
     /// Full error string, failed runs only (rendered as the quoted block).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// Display name of the template active for this run (e.g. "PRD /
+    /// Spec"), recorded at run time so the history reads correctly even if
+    /// the template is later renamed or removed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -83,6 +88,12 @@ struct DocHistory {
     content_hash: String,
     #[serde(default)]
     runs: Vec<GenerationRun>,
+    /// Per-document template override (PR 3, task 11): the template id to
+    /// use when generating for this document, distinct from the app-wide
+    /// default. `None` means "use the app default" — set_doc_template(None)
+    /// clears the override rather than deleting the whole sidecar entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    template_id: Option<String>,
 }
 
 type HistoryStore = HashMap<String, DocHistory>;
@@ -110,34 +121,78 @@ fn hash_file(doc_path: &str) -> Option<String> {
     fs::read(doc_path).ok().map(|bytes| sha256_hex(&bytes))
 }
 
-/// History for `doc_path`, with rename fallback: on a path miss, hash the
-/// file and adopt any record whose contentHash matches (first match wins —
-/// two byte-identical documents with histories are ambiguous, and either
-/// answer is defensible). A hit migrates the record to the new path so the
-/// fallback never has to fire twice.
-pub(crate) fn history_for(dir: &Path, doc_path: &str) -> Vec<GenerationRun> {
+/// Resolve the store entry for `doc_path`: exact path key, then sha256
+/// rename fallback (hash the file, adopt any record whose contentHash
+/// matches — first match wins, since two byte-identical documents with
+/// histories are ambiguous and either answer is defensible). A fallback hit
+/// migrates the record to `doc_path` so it never has to fire twice, and
+/// persists that migration immediately (a cache move, not new information —
+/// if the write fails the caller still gets the resolved key and the
+/// fallback simply fires again next time).
+///
+/// Every reader/writer of a per-document sidecar entry (history, per-doc
+/// template override) MUST go through this so a document never shows
+/// inconsistent state depending on which command last touched it. Returns
+/// the loaded (possibly migrated) store and the key to use, or `None` if
+/// there is no existing entry and no fallback hit — callers that only read
+/// treat that as "nothing recorded"; callers that write fall back to
+/// `doc_path` as a fresh key.
+fn resolve_entry(dir: &Path, doc_path: &str) -> (HistoryStore, Option<String>) {
     let mut store = read_store(dir);
-    if let Some(doc) = store.get(doc_path) {
-        return doc.runs.clone();
+    if store.contains_key(doc_path) {
+        return (store, Some(doc_path.to_string()));
     }
-    let Some(hash) = hash_file(doc_path) else { return Vec::new() };
+    let Some(hash) = hash_file(doc_path) else { return (store, None) };
     if hash.is_empty() {
-        return Vec::new();
+        return (store, None);
     }
     let Some(old_key) = store
         .iter()
         .find(|(_, doc)| !doc.content_hash.is_empty() && doc.content_hash == hash)
         .map(|(k, _)| k.clone())
     else {
-        return Vec::new();
+        return (store, None);
     };
     let doc = store.remove(&old_key).unwrap_or_default();
-    let runs = doc.runs.clone();
     store.insert(doc_path.to_string(), doc);
-    // Migration is a cache move, not new information — if the write fails
-    // the history is still returned and the fallback fires again next time.
     let _ = write_store(dir, &store);
-    runs
+    (store, Some(doc_path.to_string()))
+}
+
+/// History for `doc_path`, with rename fallback — see `resolve_entry`.
+pub(crate) fn history_for(dir: &Path, doc_path: &str) -> Vec<GenerationRun> {
+    let (store, key) = resolve_entry(dir, doc_path);
+    key.and_then(|k| store.get(&k).map(|doc| doc.runs.clone())).unwrap_or_default()
+}
+
+/// The per-document template override for `doc_path`, with the same
+/// path-key/sha256-rename-fallback resolution `history_for` uses. `None`
+/// means "no override recorded" (use the app default).
+pub(crate) fn doc_template_for(dir: &Path, doc_path: &str) -> Option<String> {
+    let (store, key) = resolve_entry(dir, doc_path);
+    key.and_then(|k| store.get(&k).and_then(|doc| doc.template_id.clone()))
+}
+
+/// Set (or, with `None`, clear) the per-document template override for
+/// `doc_path`, resolving the entry the same way `history_for` does so a
+/// renamed-but-unchanged document keeps a single override rather than
+/// silently starting a second, orphaned entry.
+pub(crate) fn set_doc_template_for(
+    dir: &Path,
+    doc_path: &str,
+    template_id: Option<String>,
+) -> Result<(), String> {
+    let (mut store, key) = resolve_entry(dir, doc_path);
+    let key = key.unwrap_or_else(|| doc_path.to_string());
+    let entry = store.entry(key).or_default();
+    entry.template_id = template_id;
+    // Fresh entries (no prior history run) need a content hash too, or a
+    // later rename would have nothing to match against — mirrors
+    // append_run's refresh-on-write behavior.
+    if entry.content_hash.is_empty() {
+        entry.content_hash = hash_file(doc_path).unwrap_or_default();
+    }
+    write_store(dir, &store)
 }
 
 /// Append a run, assign its version, refresh the record's content hash from
@@ -192,6 +247,24 @@ pub fn append_generation_run(
     append_run(&dir, &path, run)
 }
 
+#[tauri::command]
+pub fn get_doc_template(app: tauri::AppHandle, doc_path: String) -> Result<Option<String>, String> {
+    use tauri::Manager;
+    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    Ok(doc_template_for(&dir, &doc_path))
+}
+
+#[tauri::command]
+pub fn set_doc_template(
+    app: tauri::AppHandle,
+    doc_path: String,
+    template_id: Option<String>,
+) -> Result<(), String> {
+    use tauri::Manager;
+    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    set_doc_template_for(&dir, &doc_path, template_id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -212,6 +285,7 @@ mod tests {
             milestones: None,
             sections: None,
             error: None,
+            template: None,
         }
     }
 
@@ -342,5 +416,100 @@ mod tests {
         // make sure an unreadable path doesn't inherit /gone/a.md's record.
         let runs = history_for(dir.path(), "/gone/b.md");
         assert!(runs.is_empty());
+    }
+
+    #[test]
+    fn set_then_get_doc_template_round_trips_through_disk() {
+        let (dir, doc) = temp_setup();
+        let doc_path = doc.to_str().unwrap();
+
+        assert_eq!(doc_template_for(dir.path(), doc_path), None);
+
+        set_doc_template_for(dir.path(), doc_path, Some("PRD / Spec".to_string())).unwrap();
+        assert_eq!(
+            doc_template_for(dir.path(), doc_path),
+            Some("PRD / Spec".to_string())
+        );
+    }
+
+    #[test]
+    fn set_doc_template_none_clears_the_override() {
+        let (dir, doc) = temp_setup();
+        let doc_path = doc.to_str().unwrap();
+
+        set_doc_template_for(dir.path(), doc_path, Some("PRD / Spec".to_string())).unwrap();
+        set_doc_template_for(dir.path(), doc_path, None).unwrap();
+
+        assert_eq!(doc_template_for(dir.path(), doc_path), None);
+    }
+
+    #[test]
+    fn doc_template_follows_the_same_rename_fallback_as_history() {
+        let (dir, doc) = temp_setup();
+        let doc_path = doc.to_str().unwrap().to_string();
+
+        set_doc_template_for(dir.path(), &doc_path, Some("PRD / Spec".to_string())).unwrap();
+
+        let renamed = dir.path().join("renamed.md");
+        fs::rename(&doc, &renamed).unwrap();
+        let renamed_path = renamed.to_str().unwrap();
+
+        assert_eq!(
+            doc_template_for(dir.path(), renamed_path),
+            Some("PRD / Spec".to_string()),
+            "hash fallback must resolve the same entry get_generation_history would"
+        );
+    }
+
+    #[test]
+    fn pre_existing_sidecar_json_without_template_id_reads_clean() {
+        let (dir, doc) = temp_setup();
+        let doc_path = doc.to_str().unwrap();
+
+        // Simulate a sidecar written before this field existed: no
+        // templateId key at all.
+        let mut store = HistoryStore::new();
+        store.insert(
+            doc_path.to_string(),
+            DocHistory {
+                content_hash: sha256_hex(b"# Hello\n\nBody.\n"),
+                runs: vec![run(RunOutcome::Succeeded)],
+                ..Default::default()
+            },
+        );
+        write_store(dir.path(), &store).unwrap();
+
+        // Strip templateId defensively is unnecessary — DocHistory never
+        // wrote it — but also confirm hand-authored JSON lacking the key
+        // deserializes without error.
+        let raw = fs::read_to_string(dir.path().join(HISTORY_FILE)).unwrap();
+        assert!(!raw.contains("templateId"));
+
+        assert_eq!(doc_template_for(dir.path(), doc_path), None);
+        assert_eq!(history_for(dir.path(), doc_path).len(), 1);
+    }
+
+    #[test]
+    fn generation_run_with_template_serializes_and_deserializes() {
+        let mut r = run(RunOutcome::Succeeded);
+        r.template = Some("PRD / Spec".to_string());
+
+        let json = serde_json::to_string(&r).unwrap();
+        assert!(json.contains("\"template\":\"PRD / Spec\""));
+
+        let back: GenerationRun = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.template, Some("PRD / Spec".to_string()));
+    }
+
+    #[test]
+    fn generation_run_without_template_omits_the_field_and_defaults_on_read() {
+        let r = run(RunOutcome::Succeeded);
+        assert_eq!(r.template, None);
+
+        let json = serde_json::to_string(&r).unwrap();
+        assert!(!json.contains("template"));
+
+        let back: GenerationRun = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.template, None);
     }
 }
