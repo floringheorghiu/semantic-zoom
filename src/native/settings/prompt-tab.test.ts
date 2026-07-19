@@ -40,6 +40,15 @@ function mount(): void {
     <label for="template-text">Instructions
       <textarea id="template-text" rows="14" spellcheck="false"></textarea>
     </label>
+    <div id="template-add-custom" hidden>
+      <label for="template-new-name">New template name
+        <input id="template-new-name" type="text" />
+      </label>
+      <div class="row">
+        <button id="template-add-confirm" type="button">Create</button>
+        <button id="template-add-cancel" type="button">Cancel</button>
+      </div>
+    </div>
     <div class="row">
       <button id="template-save" type="button">Save</button>
       <button id="template-restore" type="button">Restore default</button>
@@ -212,20 +221,46 @@ describe('prompt tab', () => {
     expect(templates.selected).toBe('prd');
   });
 
-  it('Add custom… prompts for a name, seeds text from General, appends and selects it', async () => {
-    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('New style');
+  it('Add custom… reveals an inline naming form and hides/disables the normal controls', async () => {
     await initPromptTab();
     const select = el<HTMLSelectElement>('template-select');
     const textarea = el<HTMLTextAreaElement>('template-text');
+    const saveButton = el<HTMLButtonElement>('template-save');
+    const restoreButton = el<HTMLButtonElement>('template-restore');
+    const deleteButton = el<HTMLButtonElement>('template-delete');
+    const addCustomForm = el<HTMLDivElement>('template-add-custom');
 
     select.value = '__add__';
     select.dispatchEvent(new Event('change'));
+
+    expect(addCustomForm.hidden).toBe(false);
+    expect(textarea.disabled).toBe(true);
+    expect(saveButton.disabled).toBe(true);
+    expect(restoreButton.disabled).toBe(true);
+    expect(deleteButton.disabled).toBe(true);
+    // Dropdown reverts immediately so it doesn't visibly sit on "Add custom…".
+    expect(select.value).toBe('general');
+  });
+
+  it('Add custom… + Create with a name seeds text from General, appends and selects it, then hides the form', async () => {
+    await initPromptTab();
+    const select = el<HTMLSelectElement>('template-select');
+    const textarea = el<HTMLTextAreaElement>('template-text');
+    const newNameInput = el<HTMLInputElement>('template-new-name');
+    const addConfirmButton = el<HTMLButtonElement>('template-add-confirm');
+    const addCustomForm = el<HTMLDivElement>('template-add-custom');
+
+    select.value = '__add__';
+    select.dispatchEvent(new Event('change'));
+
+    newNameInput.value = 'New style';
+    addConfirmButton.click();
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(promptSpy).toHaveBeenCalled();
     const generalBuiltin = BUILTIN_TEMPLATES.find((b) => b.id === 'general')!;
     expect(textarea.value).toBe(generalBuiltin.text);
+    expect(addCustomForm.hidden).toBe(true);
 
     const values = Array.from(select.options).map((o) => o.value);
     expect(values.length).toBe(BUILTIN_TEMPLATES.length + 3); // +existing custom +new custom +__add__
@@ -237,6 +272,83 @@ describe('prompt tab', () => {
     expect(added.text).toBe(generalBuiltin.text);
     expect(templates.selected).toBe(added.id);
     expect(select.value).toBe(added.id);
+  });
+
+  it('Add custom… + Enter in the name field confirms, same as clicking Create', async () => {
+    await initPromptTab();
+    const select = el<HTMLSelectElement>('template-select');
+    const newNameInput = el<HTMLInputElement>('template-new-name');
+
+    select.value = '__add__';
+    select.dispatchEvent(new Event('change'));
+
+    newNameInput.value = 'Enter style';
+    newNameInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const call = invokeMock.mock.calls.find((c) => c[0] === 'set_prompt_templates');
+    const templates = call![1].templates;
+    expect(templates.custom.find((c: { name: string }) => c.name === 'Enter style')).toBeDefined();
+  });
+
+  it('Add custom… + Cancel hides the form, restores currentId, and creates nothing', async () => {
+    await initPromptTab();
+    const select = el<HTMLSelectElement>('template-select');
+    const newNameInput = el<HTMLInputElement>('template-new-name');
+    const addCancelButton = el<HTMLButtonElement>('template-add-cancel');
+    const addCustomForm = el<HTMLDivElement>('template-add-custom');
+    const saveButton = el<HTMLButtonElement>('template-save');
+
+    select.value = '__add__';
+    select.dispatchEvent(new Event('change'));
+    newNameInput.value = 'Abandoned';
+    addCancelButton.click();
+
+    expect(addCustomForm.hidden).toBe(true);
+    expect(select.value).toBe('general');
+    expect(saveButton.disabled).toBe(false);
+
+    const call = invokeMock.mock.calls.find((c) => c[0] === 'set_prompt_templates');
+    expect(call).toBeUndefined();
+  });
+
+  it('Add custom… + Escape in the name field cancels, same as clicking Cancel', async () => {
+    await initPromptTab();
+    const select = el<HTMLSelectElement>('template-select');
+    const newNameInput = el<HTMLInputElement>('template-new-name');
+    const addCustomForm = el<HTMLDivElement>('template-add-custom');
+
+    select.value = '__add__';
+    select.dispatchEvent(new Event('change'));
+    newNameInput.value = 'Abandoned';
+    newNameInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+
+    expect(addCustomForm.hidden).toBe(true);
+    expect(select.value).toBe('general');
+
+    const call = invokeMock.mock.calls.find((c) => c[0] === 'set_prompt_templates');
+    expect(call).toBeUndefined();
+  });
+
+  it('Add custom… + Create with an empty/whitespace name does not create an entry', async () => {
+    await initPromptTab();
+    const select = el<HTMLSelectElement>('template-select');
+    const newNameInput = el<HTMLInputElement>('template-new-name');
+    const addConfirmButton = el<HTMLButtonElement>('template-add-confirm');
+    const addCustomForm = el<HTMLDivElement>('template-add-custom');
+
+    select.value = '__add__';
+    select.dispatchEvent(new Event('change'));
+    newNameInput.value = '   ';
+    addConfirmButton.click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Form stays open — nothing was created.
+    expect(addCustomForm.hidden).toBe(false);
+    const call = invokeMock.mock.calls.find((c) => c[0] === 'set_prompt_templates');
+    expect(call).toBeUndefined();
   });
 
   it('Delete removes the custom entry and selects general', async () => {

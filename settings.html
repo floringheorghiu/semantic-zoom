@@ -24,7 +24,7 @@
         background: color-mix(in srgb, currentColor 4%, transparent);
         color: inherit;
       }
-      #key-row[hidden], #model-custom-row[hidden] { display: none; }
+      #key-row[hidden], #model-custom-row[hidden], #template-add-custom[hidden] { display: none; }
       #status-line { font-size: 12px; opacity: 0.75; min-height: 1.2em; }
       .row { display: flex; gap: 8px; }
       button {
@@ -177,6 +177,15 @@
       <label for="template-select">Template
         <select id="template-select"></select>
       </label>
+      <div id="template-add-custom" hidden>
+        <label for="template-new-name">New template name
+          <input id="template-new-name" type="text" placeholder="Template name" autocomplete="off" />
+        </label>
+        <div class="row">
+          <button id="template-add-confirm" type="button">Create</button>
+          <button id="template-add-cancel" type="button">Cancel</button>
+        </div>
+      </div>
       <label for="template-text">Instructions
         <textarea id="template-text" rows="14" spellcheck="false"></textarea>
       </label>

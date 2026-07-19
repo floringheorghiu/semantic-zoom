@@ -77,6 +77,10 @@ export async function initPromptTab(): Promise<void> {
   const scopeDefaultRadio: HTMLInputElement = foundDefaultRadio;
   const scopeDocRadio: HTMLInputElement = foundDocRadio;
   const scopeHint = el<HTMLElement>('template-scope-hint');
+  const addCustomForm = el<HTMLDivElement>('template-add-custom');
+  const newNameInput = el<HTMLInputElement>('template-new-name');
+  const addConfirmButton = el<HTMLButtonElement>('template-add-confirm');
+  const addCancelButton = el<HTMLButtonElement>('template-add-cancel');
 
   const loaded = await invoke<PromptTemplatesConfig | null>('get_prompt_templates');
   const config: PromptTemplatesConfig = loaded
@@ -220,10 +224,41 @@ export async function initPromptTab(): Promise<void> {
     reflectDocSelection(id);
   }
 
-  async function handleAddCustom(): Promise<void> {
-    const name = window.prompt('Template name');
+  /** Shows the inline naming form in place of the normal Save/Restore/
+      Delete row, disabling the textarea and those buttons so the UI isn't
+      ambiguous mid-creation. Replaces `window.prompt()`, which WKWebView
+      does not reliably surface without a native delegate Tauri doesn't
+      wire up. */
+  function showAddCustomForm(): void {
+    addCustomForm.hidden = false;
+    textarea.disabled = true;
+    saveButton.disabled = true;
+    restoreButton.disabled = true;
+    deleteButton.disabled = true;
+    newNameInput.value = '';
+    newNameInput.focus();
+  }
+
+  function hideAddCustomForm(): void {
+    addCustomForm.hidden = true;
+    textarea.disabled = false;
+    saveButton.disabled = false;
+    restoreButton.disabled = false;
+    deleteButton.disabled = false;
+  }
+
+  /** Cancel path: hide the form and fall back to whatever was selected
+      before "Add custom…" was chosen. */
+  function cancelAddCustom(): void {
+    hideAddCustomForm();
+    newNameInput.value = '';
+    reflectSelection(currentId);
+  }
+
+  async function confirmAddCustom(): Promise<void> {
+    const name = newNameInput.value.trim();
     if (!name) {
-      reflectSelection(currentId);
+      newNameInput.focus();
       return;
     }
     const entry = { id: crypto.randomUUID(), name, text: effectiveText('general') };
@@ -232,6 +267,7 @@ export async function initPromptTab(): Promise<void> {
     await invoke('set_prompt_templates', { templates: config });
     buildOptions();
     reflectSelection(entry.id);
+    hideAddCustomForm();
   }
 
   select.addEventListener('change', () => {
@@ -240,10 +276,32 @@ export async function initPromptTab(): Promise<void> {
       return;
     }
     if (select.value === ADD_CUSTOM) {
-      void handleAddCustom();
+      // Revert the dropdown to the prior selection immediately so it
+      // doesn't visibly sit on "Add custom…" while the inline form is
+      // open — mirrors the old cancel-path behavior.
+      reflectSelection(currentId);
+      showAddCustomForm();
       return;
     }
     reflectSelection(select.value);
+  });
+
+  addConfirmButton.addEventListener('click', () => {
+    void confirmAddCustom();
+  });
+
+  addCancelButton.addEventListener('click', () => {
+    cancelAddCustom();
+  });
+
+  newNameInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      void confirmAddCustom();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      cancelAddCustom();
+    }
   });
 
   scopeDefaultRadio.addEventListener('change', () => {
