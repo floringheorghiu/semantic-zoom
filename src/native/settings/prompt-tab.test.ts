@@ -29,6 +29,11 @@ function seededConfig() {
 
 function mount(): void {
   document.body.innerHTML = `
+    <fieldset id="template-scope">
+      <label><input type="radio" name="tscope" value="default" checked /> Default</label>
+      <label><input type="radio" name="tscope" value="doc" /> This document</label>
+    </fieldset>
+    <div id="template-scope-hint" hidden></div>
     <label for="template-select">Template
       <select id="template-select"></select>
     </label>
@@ -56,13 +61,25 @@ function el<T extends HTMLElement>(id: string): T {
   return document.getElementById(id) as T;
 }
 
+function scopeRadio(value: 'default' | 'doc'): HTMLInputElement {
+  return document.querySelector(`input[name="tscope"][value="${value}"]`) as HTMLInputElement;
+}
+
+function setCurrentDoc(path: string | null): void {
+  if (path === null) window.localStorage.removeItem('sz-current-doc');
+  else window.localStorage.setItem('sz-current-doc', path);
+}
+
 beforeEach(() => {
   invokeMock.mockReset();
   invokeMock.mockImplementation((cmd: string) => {
     if (cmd === 'get_prompt_templates') return Promise.resolve(seededConfig());
     if (cmd === 'set_prompt_templates') return Promise.resolve(undefined);
+    if (cmd === 'get_doc_template') return Promise.resolve(null);
+    if (cmd === 'set_doc_template') return Promise.resolve(undefined);
     return Promise.resolve(undefined);
   });
+  window.localStorage.clear();
   mount();
 });
 
@@ -353,5 +370,162 @@ describe('prompt tab', () => {
     const templates = call![1].templates;
     expect(templates.custom.find((c: { id: string }) => c.id === CUSTOM_ID)).toBeUndefined();
     expect(templates.selected).toBe('general');
+  });
+});
+
+describe('prompt tab — per-document scope (Task 12)', () => {
+  it('"This document" is disabled with a hint when no document is open', async () => {
+    setCurrentDoc(null);
+    await initPromptTab();
+
+    expect(scopeRadio('doc').disabled).toBe(true);
+    expect(el<HTMLElement>('template-scope-hint').hidden).toBe(false);
+  });
+
+  it('"This document" is enabled with no hint once a document is open', async () => {
+    setCurrentDoc('/docs/plan.md');
+    await initPromptTab();
+
+    expect(scopeRadio('doc').disabled).toBe(false);
+    expect(el<HTMLElement>('template-scope-hint').hidden).toBe(true);
+  });
+
+  it('selecting "This document" loads get_doc_template and shows "Follow default" when unset', async () => {
+    setCurrentDoc('/docs/plan.md');
+    await initPromptTab();
+    const select = el<HTMLSelectElement>('template-select');
+
+    scopeRadio('doc').checked = true;
+    scopeRadio('doc').dispatchEvent(new Event('change'));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(invokeMock).toHaveBeenCalledWith('get_doc_template', { docPath: '/docs/plan.md' });
+    const generalBuiltin = BUILTIN_TEMPLATES.find((b) => b.id === 'general')!;
+    const firstOption = select.options[0];
+    expect(firstOption.textContent).toBe(`Follow default (${generalBuiltin.name})`);
+    expect(select.value).toBe(firstOption.value);
+  });
+
+  it('selecting "This document" shows the stored per-doc template when one is set', async () => {
+    setCurrentDoc('/docs/plan.md');
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === 'get_prompt_templates') return Promise.resolve(seededConfig());
+      if (cmd === 'get_doc_template') return Promise.resolve('prd');
+      return Promise.resolve(undefined);
+    });
+    await initPromptTab();
+    const select = el<HTMLSelectElement>('template-select');
+    const textarea = el<HTMLTextAreaElement>('template-text');
+
+    scopeRadio('doc').checked = true;
+    scopeRadio('doc').dispatchEvent(new Event('change'));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(select.value).toBe('prd');
+    expect(textarea.value).toBe(OVERRIDE_TEXT); // effectiveText('prd') — override wins
+  });
+
+  it('picking a template in doc scope calls set_doc_template and never touches config.selected', async () => {
+    setCurrentDoc('/docs/plan.md');
+    await initPromptTab();
+    const select = el<HTMLSelectElement>('template-select');
+
+    scopeRadio('doc').checked = true;
+    scopeRadio('doc').dispatchEvent(new Event('change'));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    select.value = 'prd';
+    select.dispatchEvent(new Event('change'));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(invokeMock).toHaveBeenCalledWith('set_doc_template', {
+      docPath: '/docs/plan.md',
+      templateId: 'prd',
+    });
+    expect(invokeMock.mock.calls.some((c) => c[0] === 'set_prompt_templates')).toBe(false);
+  });
+
+  it('picking "Follow default" in doc scope calls set_doc_template with a null id', async () => {
+    setCurrentDoc('/docs/plan.md');
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === 'get_prompt_templates') return Promise.resolve(seededConfig());
+      if (cmd === 'get_doc_template') return Promise.resolve('prd');
+      return Promise.resolve(undefined);
+    });
+    await initPromptTab();
+    const select = el<HTMLSelectElement>('template-select');
+
+    scopeRadio('doc').checked = true;
+    scopeRadio('doc').dispatchEvent(new Event('change'));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    select.value = select.options[0].value; // the "Follow default" sentinel
+    select.dispatchEvent(new Event('change'));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(invokeMock).toHaveBeenCalledWith('set_doc_template', {
+      docPath: '/docs/plan.md',
+      templateId: null,
+    });
+  });
+
+  it('Save/Restore/Delete are hidden in doc scope', async () => {
+    setCurrentDoc('/docs/plan.md');
+    await initPromptTab();
+    const saveButton = el<HTMLButtonElement>('template-save');
+    const restoreButton = el<HTMLButtonElement>('template-restore');
+    const deleteButton = el<HTMLButtonElement>('template-delete');
+
+    scopeRadio('doc').checked = true;
+    scopeRadio('doc').dispatchEvent(new Event('change'));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(saveButton.hidden).toBe(true);
+    expect(restoreButton.hidden).toBe(true);
+    expect(deleteButton.hidden).toBe(true);
+  });
+
+  it('switching back to Default restores the global dropdown, editable text, and Save', async () => {
+    setCurrentDoc('/docs/plan.md');
+    await initPromptTab();
+    const select = el<HTMLSelectElement>('template-select');
+    const textarea = el<HTMLTextAreaElement>('template-text');
+    const saveButton = el<HTMLButtonElement>('template-save');
+
+    scopeRadio('doc').checked = true;
+    scopeRadio('doc').dispatchEvent(new Event('change'));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    scopeRadio('default').checked = true;
+    scopeRadio('default').dispatchEvent(new Event('change'));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(select.value).toBe('general'); // config.selected from seededConfig
+    expect(textarea.readOnly).toBe(false);
+    expect(saveButton.hidden).toBe(false);
+    const values = Array.from(select.options).map((o) => o.value);
+    expect(values).toContain('__add__');
+    expect(values).not.toContain('__follow_default__');
+  });
+
+  it('a storage event for sz-current-doc re-syncs availability from the other window', async () => {
+    setCurrentDoc(null);
+    await initPromptTab();
+    expect(scopeRadio('doc').disabled).toBe(true);
+
+    setCurrentDoc('/docs/plan.md');
+    window.dispatchEvent(new StorageEvent('storage', { key: 'sz-current-doc' }));
+    await Promise.resolve();
+
+    expect(scopeRadio('doc').disabled).toBe(false);
   });
 });

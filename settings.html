@@ -169,6 +169,11 @@
       <div id="status-line" role="status"></div>
     </section>
     <section data-tab="prompt" hidden>
+      <fieldset id="template-scope">
+        <label><input type="radio" name="tscope" value="default" checked /> Default</label>
+        <label><input type="radio" name="tscope" value="doc" /> This document</label>
+      </fieldset>
+      <div id="template-scope-hint" hidden>Open a document to set a template just for it.</div>
       <label for="template-select">Template
         <select id="template-select"></select>
       </label>

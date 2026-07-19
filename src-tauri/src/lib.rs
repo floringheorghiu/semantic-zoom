@@ -34,6 +34,8 @@ pub fn run() {
             commands::help::install_help_file,
             commands::generation_history::get_generation_history,
             commands::generation_history::append_generation_run,
+            commands::generation_history::get_doc_template,
+            commands::generation_history::set_doc_template,
             commands::llm_client::llm_complete,
             commands::llm_client::probe_provider,
             commands::llm_client::cancel_llm_generation,

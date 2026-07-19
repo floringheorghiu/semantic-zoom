@@ -14,12 +14,14 @@ import {
   remoteSynthesizer,
   estimateTokens,
   lastSynthesisRunMeta,
+  setDocTemplateId,
   MAX_INPUT_TOKENS,
 } from './engine-b-remote';
 
 beforeEach(() => {
   invokeMock.mockReset();
   mockLlmResponses(); // default: get_prompt_templates -> null, llm_complete -> { content: 'not json' }
+  setDocTemplateId(null); // reset the Task 12 side channel between tests
 });
 
 /**
@@ -97,6 +99,26 @@ test('a failed run reports meta for the FINAL attempt (count, temperature, usage
   expect(meta!.attempts).toBe(3);
   expect(meta!.temperature).toBe(0.6); // ladder's last rung
   expect(meta!.usage).toEqual({ promptTokens: 12, completionTokens: 3 }); // final attempt's, not a sum
+});
+
+test('setDocTemplateId (Task 12) threads the per-document override into resolveTemplate', async () => {
+  invokeMock.mockImplementation((cmd: string) => {
+    if (cmd === 'get_prompt_templates') {
+      return Promise.resolve({ selected: 'general', overrides: {}, custom: [] });
+    }
+    if (cmd === 'llm_complete') return Promise.resolve({ content: 'not json' });
+    return Promise.resolve(undefined);
+  });
+
+  setDocTemplateId('prd'); // main.ts calls this with get_doc_template's result
+  await remoteSynthesizer.synthesize('# Doc\n\nA paragraph.', signal()).catch(() => {});
+
+  // resolveTemplate's fallback order is docTemplateId -> config.selected ->
+  // 'general' — 'prd' must win over the global default ('general') here.
+  expect(lastSynthesisRunMeta()!.template).toBe('PRD / Spec');
+
+  const call = invokeMock.mock.calls.find(([cmd]) => cmd === 'llm_complete');
+  expect(call![1].systemPrompt).toContain('For each section write');
 });
 
 test('meta is null after a pre-flight refusal (no provider call to describe)', async () => {
