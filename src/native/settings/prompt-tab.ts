@@ -143,6 +143,7 @@ export async function initPromptTab(): Promise<void> {
   async function handleRestore(): Promise<void> {
     const id = select.value;
     delete config.overrides[id];
+    config.selected = id;
     await invoke('set_prompt_templates', { templates: config });
     reflectSelection(id);
   }
