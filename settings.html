@@ -60,6 +60,26 @@
       }
       section[data-tab] { display: flex; flex-direction: column; gap: 12px; }
       section[data-tab][hidden] { display: none; }
+      #accent-swatches { align-items: center; flex-wrap: wrap; }
+      .swatch {
+        width: 24px;
+        height: 24px;
+        padding: 0;
+        border-radius: 50%;
+        border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+        box-shadow: none;
+        cursor: pointer;
+      }
+      .swatch[data-active="true"] {
+        box-shadow: 0 0 0 2px var(--sz-bg, canvas), 0 0 0 4px var(--sz-accent, #8080ff);
+      }
+      #accent-custom {
+        width: 28px;
+        height: 24px;
+        padding: 0;
+        border-radius: 6px;
+        cursor: pointer;
+      }
     </style>
   </head>
   <body>
@@ -67,7 +87,11 @@
       <button role="tab" data-tab="general" aria-selected="true">General</button>
       <button role="tab" data-tab="inference" aria-selected="false">Inference</button>
     </div>
-    <section data-tab="general"></section>
+    <section data-tab="general">
+      <label>Accent color
+        <div class="row" id="accent-swatches"></div>
+      </label>
+    </section>
     <section data-tab="inference" hidden>
       <label for="engine">Generation Engine
         <select id="engine">
