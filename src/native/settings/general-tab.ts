@@ -2,12 +2,13 @@
 //
 // Bundles alone into settings.html, same discipline as inference-tab.ts:
 // never imports the viewport, store, or engine modules. Task 2 adds the
-// accent-color swatch picker; later tasks (3, 4) extend this file with the
-// theme radios and the anchor-visibility checkbox as their own sections —
-// each kept in its own init function so they stay cleanly separable.
+// accent-color swatch picker; tasks 3 and 4 extend this file with the theme
+// radios and the anchor-visibility checkbox as their own sections — each
+// kept in its own init function so they stay cleanly separable.
 
 import { getAccentPref, setAccentPref } from '../../state/accent';
 import { getThemePref, setThemePref, type ThemePref } from '../../state/theme';
+import { getShowAnchors, setShowAnchors } from '../../state/anchor-visibility';
 
 /** Presets shown as swatch buttons (user-ratified set), custom via <input type="color">. */
 const ACCENT_PRESETS = ['#8080ff', '#ff6b35', '#2fa26e', '#e0529c', '#d9a514', '#4aa8d8'];
@@ -95,12 +96,30 @@ function initThemeRadios(): (pref: ThemePref) => void {
 }
 
 /**
- * Wire every General tab control. Extended by later tasks (anchor
- * visibility). Returns the theme-radio sync callback so the settings entry
- * can feed it into `initTheme()`, keeping radios live-synced with external
- * theme changes.
+ * Wire `#show-anchors`: reflect `getShowAnchors()` on load, write
+ * `setShowAnchors(checked)` on `change`. No returned sync callback (unlike
+ * theme) — nothing else in this window needs to observe the preference
+ * changing live; `state/anchor-visibility.ts`'s own `storage` listener keeps
+ * the DOM attribute correct across windows regardless.
+ */
+function initAnchorVisibilityCheckbox(): void {
+  const checkbox = document.getElementById('show-anchors') as HTMLInputElement | null;
+  if (!checkbox) return;
+
+  checkbox.checked = getShowAnchors();
+  checkbox.addEventListener('change', () => {
+    setShowAnchors(checkbox.checked);
+  });
+}
+
+/**
+ * Wire every General tab control. Returns the theme-radio sync callback so
+ * the settings entry can feed it into `initTheme()`, keeping radios
+ * live-synced with external theme changes.
  */
 export function initGeneralTab(): (pref: ThemePref) => void {
   initAccentSwatches();
-  return initThemeRadios();
+  const reflectRadios = initThemeRadios();
+  initAnchorVisibilityCheckbox();
+  return reflectRadios;
 }

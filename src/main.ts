@@ -29,6 +29,7 @@ import { mountThemeSwitcher, type ThemeSwitcherHandle } from './ui/theme-switche
 import { getRecentFiles, addRecentFile, clearRecentFiles } from './state/recent-files';
 import { initTheme, getThemePref, setThemePref } from './state/theme';
 import { initAccent } from './state/accent';
+import { initAnchorVisibility } from './state/anchor-visibility';
 import {
   mountContentMap,
   buildMapModel,
@@ -78,6 +79,11 @@ const themeInitTeardown = initTheme((pref) => themeSwitcher?.setValue(pref));
 // state/accent.ts). No UI in the main window subscribes to it yet, so no
 // callback is needed here.
 const accentInitTeardown = initAccent();
+// Same pattern again: apply the saved anchor-ID visibility immediately and
+// keep it live if the Settings window changes it (cross-window `storage`
+// sync, state/anchor-visibility.ts). No UI in the main window subscribes to
+// it yet, so no callback is needed here.
+const anchorVisibilityInitTeardown = initAnchorVisibility();
 
 // --- session state (the RxJS store arrives in Task 2.1; direct wiring for now) ---
 let currentLevel: ZoomLevel = 0;
@@ -1523,6 +1529,7 @@ window.addEventListener('DOMContentLoaded', () => {
     themeSwitcher = null;
     themeInitTeardown();
     accentInitTeardown();
+    anchorVisibilityInitTeardown();
   });
 
   void installMenu();
