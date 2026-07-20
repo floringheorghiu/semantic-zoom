@@ -11,16 +11,15 @@
    tracks; every direct child (`.doc-header`, `.milestone-divider`,
    `.pgroup`, `.metacard`) is placed in the middle 4, columns 1 and 6 are
    permanent whitespace gutters (never content, floored at 1rem so they
-   never fully collapse on a very narrow window). Each child is ALSO capped
-   at the historic prose measure (46rem / 54rem raw) and centered within
-   its own 4-column cell — so on windows wider than ~69rem/81rem the extra
-   room becomes MORE gutter rather than an ever-wider text column, and
-   below that the column genuinely tracks 4/6 of the window (the point of
-   a real column grid, as opposed to one centered block with leftover
-   margins). CSS Grid's own auto-placement stacks the children vertically
-   for free: each one requests columns 2–5, which are already occupied by
-   the previous child's row, so every child lands in its own new row —
-   equivalent to normal block flow. */
+   never fully collapse on a very narrow window). No cap on the content
+   columns — a child genuinely tracks 4/6 of the window width at every
+   size, growing and shrinking as the window is resized (confirmed live:
+   a fixed prose-measure cap here just made the extra width silently turn
+   into more gutter instead, which read as "nothing happened"). CSS Grid's
+   own auto-placement stacks the children vertically for free: each one
+   requests columns 2–5, which are already occupied by the previous
+   child's row, so every child lands in its own new row — equivalent to
+   normal block flow. */
 
 /* Content scale (⌘= / ⌘- / ⌘0): browser-style zoom of the reading content only
    — chrome (toolbar, traffic-light inset) is unaffected. `zoom` reflows, so the
@@ -48,14 +47,7 @@
 }
 
 .reading-column > * {
-  grid-column: 2 / span 4;
-  width: min(46rem, 100%);   /* the historic prose measure, now a ceiling on the cell rather than the whole page */
-  margin-inline: auto;
-}
-
-/* Raw level carries tables/code; give it a little more room. */
-.level-layer[data-level='0'] > .reading-column > * {
-  width: min(54rem, 100%);
+  grid-column: 2 / span 4;   /* grid's default `justify-self: stretch` fills the 4-column cell — no width cap */
 }
 
 /* ---------- Per-level document header (§4.2) ---------- */
