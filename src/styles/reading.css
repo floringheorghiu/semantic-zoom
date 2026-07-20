@@ -5,7 +5,22 @@
    `--sz-warn` (#d36f00, 3.49:1) is kept for the TICK — a graphic, which needs only
    3:1 per WCAG 1.4.11. */
 
-/* ---------- Reading column (Ask 2): a centered, capped measure ---------- */
+/* ---------- Reading column (Ask 2): a 6-column grid ----------
+
+   The column always spans the FULL width of `.level-layer` in 6 equal
+   tracks; every direct child (`.doc-header`, `.milestone-divider`,
+   `.pgroup`, `.metacard`) is placed in the middle 4, columns 1 and 6 are
+   permanent whitespace gutters (never content, floored at 1rem so they
+   never fully collapse on a very narrow window). Each child is ALSO capped
+   at the historic prose measure (46rem / 54rem raw) and centered within
+   its own 4-column cell — so on windows wider than ~69rem/81rem the extra
+   room becomes MORE gutter rather than an ever-wider text column, and
+   below that the column genuinely tracks 4/6 of the window (the point of
+   a real column grid, as opposed to one centered block with leftover
+   margins). CSS Grid's own auto-placement stacks the children vertically
+   for free: each one requests columns 2–5, which are already occupied by
+   the previous child's row, so every child lands in its own new row —
+   equivalent to normal block flow. */
 
 /* Content scale (⌘= / ⌘- / ⌘0): browser-style zoom of the reading content only
    — chrome (toolbar, traffic-light inset) is unaffected. `zoom` reflows, so the
@@ -18,12 +33,12 @@
 }
 
 .reading-column {
+  display: grid;
+  grid-template-columns: minmax(1rem, 1fr) repeat(4, minmax(0, 1fr)) minmax(1rem, 1fr);
   width: 100%;
-  max-width: 46rem;          /* ~736px — a comfortable prose measure */
-  margin-inline: auto;
   /* The scroll container (.level-layer) fills the viewport edge-to-edge, so
-     the reading gutter lives here. */
-  padding: calc(1.75rem * var(--sz-density-pad, 1)) calc(1.25rem * var(--sz-density-pad, 1)) calc(3rem * var(--sz-density-pad, 1));
+     the reading gutter lives here (as the two outer grid tracks above). */
+  padding-block: calc(1.75rem * var(--sz-density-pad, 1)) calc(3rem * var(--sz-density-pad, 1));
   /* Density's font lever: plain markdown text (<p>/<li>/<blockquote>, no
      class of its own) inherits this instead of the root size, so density
      scales body copy without touching the toolbar/empty-state/scrubber
@@ -32,16 +47,26 @@
   line-height: var(--sz-density-line, 1.55);
 }
 
+.reading-column > * {
+  grid-column: 2 / span 4;
+  width: min(46rem, 100%);   /* the historic prose measure, now a ceiling on the cell rather than the whole page */
+  margin-inline: auto;
+}
+
 /* Raw level carries tables/code; give it a little more room. */
-.level-layer[data-level='0'] > .reading-column {
-  max-width: 54rem;          /* ~864px */
+.level-layer[data-level='0'] > .reading-column > * {
+  width: min(54rem, 100%);
 }
 
 /* ---------- Per-level document header (§4.2) ---------- */
 
-/* Title + subtitle at the top of the reading content; scrolls with it. */
+/* Title + subtitle at the top of the reading content; scrolls with it.
+   `margin-block` (not the `margin: 0 0 Xrem` shorthand) so it doesn't zero
+   out the inline margin the `.reading-column > *` grid rule uses to center
+   this cell — same specificity, and this selector would otherwise win by
+   source order. */
 .doc-header {
-  margin: 0 0 calc(1.5rem * var(--sz-density-pad, 1));
+  margin-block: 0 calc(1.5rem * var(--sz-density-pad, 1));
 }
 
 .doc-title {
@@ -154,13 +179,15 @@
 
 /* ---------- Section milestone divider (k=−1, §4.4) ---------- */
 
-/* Not a `.pgroup`: chrome announcing the first section of each milestone. */
+/* Not a `.pgroup`: chrome announcing the first section of each milestone.
+   `margin-block` (see `.doc-header` above) so it doesn't zero out the
+   `.reading-column > *` grid rule's centering `margin-inline`. */
 .milestone-divider {
   display: flex;
   gap: 8px;
   align-items: baseline;
   padding-bottom: 8px;
-  margin: calc(2rem * var(--sz-density-pad, 1)) 0 calc(1.25rem * var(--sz-density-pad, 1));
+  margin-block: calc(2rem * var(--sz-density-pad, 1)) calc(1.25rem * var(--sz-density-pad, 1));
   border-bottom: 1px solid var(--sz-border);
 }
 
