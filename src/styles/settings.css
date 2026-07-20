@@ -1,0 +1,377 @@
+/* Settings window (settings.html): shares the app's token system
+   (tokens.css) instead of a parallel palette, so accent/theme choices made
+   here look identical to the rest of the app. Window is fixed at 460x610
+   (src-tauri/src/commands/window.rs) and not resizable, so vertical rhythm
+   is deliberately tight — `body` still gets `overflow-y: auto` as a safety
+   valve rather than letting content clip. */
+
+body {
+  margin: 0;
+  padding: 20px 22px 22px;
+  font: 13px/1.5 var(--sz-font);
+  color: var(--sz-ink);
+  background: var(--sz-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* ---------- tab bar ---------- */
+
+#tab-bar {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--sz-radius-pill);
+  background: var(--sz-key-bg);
+  border: 1px solid var(--sz-seg-border);
+  align-self: flex-start;
+  flex: 0 0 auto;
+}
+
+#tab-bar [role="tab"] {
+  font: 600 12.5px/1 var(--sz-font);
+  padding: 7px 14px;
+  border-radius: var(--sz-radius-pill);
+  border: none;
+  background: transparent;
+  color: var(--sz-muted);
+  cursor: pointer;
+  transition: color 0.15s ease-out;
+}
+
+#tab-bar [role="tab"]:hover {
+  color: var(--sz-ink);
+}
+
+#tab-bar [role="tab"][aria-selected="true"] {
+  background: var(--sz-accent);
+  color: #fff;
+}
+
+#tab-bar [role="tab"]:focus-visible {
+  outline: 2px solid var(--sz-accent);
+  outline-offset: 2px;
+}
+
+/* ---------- panels ---------- */
+
+section[data-tab] {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+section[data-tab][hidden] {
+  display: none;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field__label {
+  font: 600 12.5px/1.3 var(--sz-font);
+  color: var(--sz-ink);
+}
+
+.field__hint {
+  margin: -2px 0 0;
+  font: 12px/1.4 var(--sz-font);
+  color: var(--sz-muted);
+}
+
+label.field {
+  cursor: default;
+}
+
+/* generic text/select inputs */
+
+input[type="text"],
+input[type="password"],
+select,
+textarea {
+  font: 13px/1.4 var(--sz-font);
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--sz-border);
+  background: var(--sz-bg);
+  color: var(--sz-ink);
+  outline: none;
+  transition: border-color 0.15s ease-out;
+}
+
+input[type="text"]::placeholder,
+input[type="password"]::placeholder {
+  color: var(--sz-muted);
+}
+
+input[type="text"]:hover,
+input[type="password"]:hover,
+select:hover,
+textarea:hover {
+  border-color: var(--sz-muted-50);
+}
+
+input[type="text"]:focus-visible,
+input[type="password"]:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  border-color: var(--sz-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--sz-accent) 20%, transparent);
+}
+
+textarea {
+  resize: vertical;
+  font-family: var(--sz-mono);
+}
+
+#model-custom-row[hidden],
+#key-row[hidden],
+#template-add-custom[hidden] {
+  display: none;
+}
+
+/* ---------- checkbox field (General: Show anchor IDs) ---------- */
+
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 600 12.5px/1.3 var(--sz-font);
+  color: var(--sz-ink);
+  cursor: pointer;
+}
+
+.checkbox-field input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--sz-accent);
+}
+
+/* ---------- accent swatches ---------- */
+
+#accent-swatches {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.swatch {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  cursor: pointer;
+  transition: transform 0.15s ease-out;
+}
+
+.swatch:hover {
+  transform: scale(1.08);
+}
+
+.swatch[data-active="true"] {
+  box-shadow: 0 0 0 2px var(--sz-bg), 0 0 0 4px var(--sz-accent);
+}
+
+.swatch:focus-visible {
+  outline: 2px solid var(--sz-accent);
+  outline-offset: 3px;
+}
+
+#accent-custom {
+  width: 30px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--sz-border);
+  border-radius: 8px;
+  cursor: pointer;
+  background: none;
+}
+
+/* ---------- appearance (theme) segmented control ---------- */
+
+#theme-group {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  margin: 0;
+  border: 1px solid var(--sz-seg-border);
+  border-radius: var(--sz-radius-pill);
+  background: var(--sz-key-bg);
+  align-self: flex-start;
+}
+
+#theme-group label {
+  display: flex;
+  align-items: center;
+  padding: 6px 14px;
+  border-radius: var(--sz-radius-pill);
+  font: 600 12.5px/1 var(--sz-font);
+  color: var(--sz-muted);
+  cursor: pointer;
+  transition: color 0.15s ease-out;
+}
+
+#theme-group label:hover {
+  color: var(--sz-ink);
+}
+
+#theme-group label:has(input:checked) {
+  background: var(--sz-accent);
+  color: #fff;
+}
+
+#theme-group input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+#theme-group label:has(input:focus-visible) {
+  outline: 2px solid var(--sz-accent);
+  outline-offset: 2px;
+}
+
+/* ---------- template scope segmented control (Prompt tab) ---------- */
+
+#template-scope {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  margin: 0;
+  border: 1px solid var(--sz-seg-border);
+  border-radius: var(--sz-radius-pill);
+  background: var(--sz-key-bg);
+  align-self: flex-start;
+}
+
+#template-scope label {
+  display: flex;
+  align-items: center;
+  padding: 6px 14px;
+  border-radius: var(--sz-radius-pill);
+  font: 600 12.5px/1 var(--sz-font);
+  color: var(--sz-muted);
+  cursor: pointer;
+  transition: color 0.15s ease-out;
+}
+
+#template-scope label:hover {
+  color: var(--sz-ink);
+}
+
+#template-scope label:has(input:checked) {
+  background: var(--sz-accent);
+  color: #fff;
+}
+
+#template-scope input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+#template-scope label:has(input:focus-visible) {
+  outline: 2px solid var(--sz-accent);
+  outline-offset: 2px;
+}
+
+#template-scope-hint[hidden] {
+  display: none;
+}
+
+#template-scope-hint {
+  margin: -8px 0 0;
+  font: 12px/1.4 var(--sz-font);
+  color: var(--sz-muted);
+}
+
+/* ---------- buttons ---------- */
+
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+button {
+  font: 600 12.5px/1 var(--sz-font);
+  padding: 8px 16px;
+  border-radius: var(--sz-radius-pill);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: opacity 0.15s ease-out, border-color 0.15s ease-out;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--sz-accent);
+  outline-offset: 2px;
+}
+
+#save,
+#template-save,
+#template-add-confirm {
+  background: var(--sz-accent);
+  color: #fff;
+  box-shadow: var(--sz-shadow-pill);
+}
+
+#save:hover,
+#template-save:hover,
+#template-add-confirm:hover {
+  opacity: 0.9;
+}
+
+#remove-key,
+#template-restore,
+#template-add-cancel {
+  background: var(--sz-btn-bg);
+  border-color: var(--sz-btn-border);
+  color: var(--sz-ink);
+}
+
+#remove-key:hover,
+#template-restore:hover,
+#template-add-cancel:hover {
+  border-color: var(--sz-muted-50);
+}
+
+#template-delete {
+  background: transparent;
+  border-color: transparent;
+  color: var(--sz-warn-text);
+}
+
+#template-delete:hover {
+  background: color-mix(in srgb, var(--sz-warn-text) 10%, transparent);
+}
+
+#template-delete[hidden] {
+  display: none;
+}
+
+/* ---------- status + note copy ---------- */
+
+#status-line {
+  font: 12px/1.4 var(--sz-font);
+  color: var(--sz-muted);
+  min-height: 1.3em;
+}
+
+#template-note {
+  font: 12px/1.5 var(--sz-font);
+  color: var(--sz-muted);
+  padding-top: 4px;
+  border-top: 1px solid var(--sz-hairline);
+}

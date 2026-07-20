@@ -7,6 +7,13 @@ import { initInferenceTab } from './settings/inference-tab';
 import { initGeneralTab } from './settings/general-tab';
 import { initPromptTab } from './settings/prompt-tab';
 
+// Shares the main window's token system (accent/theme palette) instead of a
+// parallel one, so a choice made here looks identical everywhere else. Pure
+// CSS — no JS module graph crosses in from viewport/store/engine (D9/D10
+// isolation is a JS-secrets concern, not a styling one).
+import '../styles/tokens.css';
+import '../styles/settings.css';
+
 // `settings.html` loads this script as `type="module" defer`, so the DOM
 // (including the static `#theme-group` markup) is already fully parsed
 // before any of this runs. `initGeneralTab()` builds the theme radios and
