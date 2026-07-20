@@ -30,12 +30,12 @@
   /* start-screen chrome (Figma 298:139 uplift): action pills, hotkey badges,
      recent-file cards, and the titlebar theme switcher */
   --sz-ui-accent:  var(--sz-accent);    /* hotkey text, switcher active icon */
-  --sz-btn-bg:     #ffffff;             /* action-pill surface */
+  --sz-btn-bg:     #F8FAFC;             /* action-pill surface */
   --sz-btn-border: #e2e8f0;
   --sz-key-bg:     #f8fafc;             /* hotkey badge + switcher surface */
   --sz-row-bg:     #ffffff;             /* recent-file card */
   --sz-row-border: #e2e8f0;
-  --sz-seg-border: rgba(0, 0, 0, 0.05); /* switcher hairline */
+  --sz-seg-border: rgba(0, 0, 0, 0.1); /* switcher hairline */
 
   /* content accent + semantic (distinct from --sz-accent above: this one
      tints badges/outlines and is NOT user-configurable) */
