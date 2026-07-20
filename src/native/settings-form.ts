@@ -2,6 +2,7 @@
 import { initTheme } from '../state/theme';
 import { initAccent } from '../state/accent';
 import { initAnchorVisibility } from '../state/anchor-visibility';
+import { initDensity } from '../state/density';
 import { initTabs } from './settings/tabs';
 import { initInferenceTab } from './settings/inference-tab';
 import { initGeneralTab } from './settings/general-tab';
@@ -20,9 +21,10 @@ import '../styles/settings.css';
 // accent swatches and returns the callbacks that reflect an external pref
 // change into them; call it first and hand each callback straight to its
 // state module's init function.
-const { reflectTheme, reflectAccent } = initGeneralTab();
+const { reflectTheme, reflectAccent, reflectDensity } = initGeneralTab();
 initTheme(reflectTheme);
 initAccent(reflectAccent);
+initDensity(reflectDensity);
 initAnchorVisibility();
 initTabs(document.body);
 initInferenceTab();

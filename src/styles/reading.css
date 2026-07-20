@@ -23,7 +23,13 @@
   margin-inline: auto;
   /* The scroll container (.level-layer) fills the viewport edge-to-edge, so
      the reading gutter lives here. */
-  padding: 1.75rem 1.25rem 3rem;
+  padding: calc(1.75rem * var(--sz-density-pad, 1)) calc(1.25rem * var(--sz-density-pad, 1)) calc(3rem * var(--sz-density-pad, 1));
+  /* Density's font lever: plain markdown text (<p>/<li>/<blockquote>, no
+     class of its own) inherits this instead of the root size, so density
+     scales body copy without touching the toolbar/empty-state/scrubber
+     chrome, which key their own rem values off :root. */
+  font-size: calc(1em * var(--sz-density-font, 1));
+  line-height: var(--sz-density-line, 1.55);
 }
 
 /* Raw level carries tables/code; give it a little more room. */
@@ -35,11 +41,11 @@
 
 /* Title + subtitle at the top of the reading content; scrolls with it. */
 .doc-header {
-  margin: 0 0 1.5rem;
+  margin: 0 0 calc(1.5rem * var(--sz-density-pad, 1));
 }
 
 .doc-title {
-  font-size: 1.9rem;
+  font-size: calc(1.9rem * var(--sz-density-font, 1));
   line-height: 1.15;
   font-weight: 700;
   color: var(--sz-ink);
@@ -48,7 +54,7 @@
 }
 
 .doc-subtitle {
-  font-size: 0.9rem;
+  font-size: calc(0.9rem * var(--sz-density-font, 1));
   color: var(--sz-muted);
   margin: 0;
 }
@@ -72,7 +78,7 @@
   display: flex;
   gap: 8px;
   align-items: baseline;
-  padding: 12px 16px;
+  padding: calc(12px * var(--sz-density-pad, 1)) calc(16px * var(--sz-density-pad, 1));
   background: var(--sz-card-head);
   border-bottom: 1px solid var(--sz-border);
 }
@@ -86,9 +92,11 @@
   text-transform: uppercase;
 }
 
+/* The milestone/story title text — primary reading content at k=-2/-1, so
+   (unlike the label above) it scales with density. */
 .metacard-title {
   margin: 0;
-  font-size: 14px;
+  font-size: calc(14px * var(--sz-density-font, 1));
   font-weight: 700;
   line-height: 1.4;
   color: var(--sz-content-accent);
@@ -99,15 +107,15 @@
 .metacard-body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px 16px;
+  gap: calc(10px * var(--sz-density-pad, 1));
+  padding: calc(12px * var(--sz-density-pad, 1)) calc(16px * var(--sz-density-pad, 1));
 }
 
 .metacard-foot {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 16px;
+  padding: calc(8px * var(--sz-density-pad, 1)) calc(16px * var(--sz-density-pad, 1));
   background: var(--sz-card-foot);
   border-top: 1px solid var(--sz-border);
 }
@@ -152,7 +160,7 @@
   gap: 8px;
   align-items: baseline;
   padding-bottom: 8px;
-  margin: 2rem 0 1.25rem;
+  margin: calc(2rem * var(--sz-density-pad, 1)) 0 calc(1.25rem * var(--sz-density-pad, 1));
   border-bottom: 1px solid var(--sz-border);
 }
 
@@ -171,7 +179,7 @@
 }
 
 .milestone-title {
-  font-size: 14px;
+  font-size: calc(14px * var(--sz-density-font, 1));
   font-weight: 700;
   line-height: 1.4;
   color: var(--sz-content-accent);
@@ -181,7 +189,7 @@
 /* A divider directly after a group needs no extra group margin on top of its
    own; the group→divider gap is the divider's margin-top. */
 .pgroup + .milestone-divider {
-  margin-top: 2rem;
+  margin-top: calc(2rem * var(--sz-density-pad, 1));
 }
 
 /* ---------- S-id label (k=0 / k=−1, §4.4) ---------- */
@@ -204,14 +212,14 @@
 /* ---------- Story / Section summary cards (Ask 3) ---------- */
 
 .summary-title {
-  font-size: 1.15rem;
+  font-size: calc(1.15rem * var(--sz-density-font, 1));
   line-height: 1.3;
   text-wrap: balance;
   margin: 0 0 0.6rem;
 }
 
 .pgroup + .pgroup {
-  margin-top: 2rem;
+  margin-top: calc(2rem * var(--sz-density-pad, 1));
 }
 
 /* ---------- Active group: the accent border (§4.6) ----------
@@ -234,7 +242,7 @@
 .level-layer[data-level='-1'] .pgroup {
   border: 1px solid transparent;
   border-radius: var(--sz-radius-card);
-  padding: 0.85rem 1rem;
+  padding: calc(0.85rem * var(--sz-density-pad, 1)) calc(1rem * var(--sz-density-pad, 1));
 }
 
 .pgroup[data-active],
@@ -244,7 +252,7 @@
 
 /* Story cards sit a little closer than bare section blocks. */
 .level-layer[data-level='-2'] .metacard + .metacard {
-  margin-top: 1.25rem;
+  margin-top: calc(1.25rem * var(--sz-density-pad, 1));
 }
 
 /* One flat card per block — no nesting. Groups the labeled rows so the
@@ -252,8 +260,8 @@
 .summary-card {
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
-  padding: 1.15rem 1.25rem;
+  gap: calc(0.85rem * var(--sz-density-pad, 1));
+  padding: calc(1.15rem * var(--sz-density-pad, 1)) calc(1.25rem * var(--sz-density-pad, 1));
   border: 1px solid var(--sz-border);
   border-radius: 14px;
   background: rgba(0, 0, 0, 0.025);
@@ -275,8 +283,8 @@
 .summary-text {
   margin: 0;
   padding-top: 4px;
-  font-size: 12px;
-  line-height: 19.5px;
+  font-size: calc(12px * var(--sz-density-font, 1));
+  line-height: calc(19.5px * var(--sz-density-font, 1));
   color: var(--sz-muted);
   text-wrap: pretty;
 }
@@ -286,7 +294,7 @@
   text-wrap: pretty;
 }
 .summary-body p {
-  margin: 0 0 0.75rem;
+  margin: 0 0 calc(0.75rem * var(--sz-density-pad, 1));
 }
 
 /* ---------- Semantic badges: colored uppercase label + tick ---------- */
@@ -330,7 +338,7 @@
    Both values are tokens, so the dark mapping follows for free. */
 .pnode pre {
   overflow-x: auto;
-  padding: 0.75rem;
+  padding: calc(0.75rem * var(--sz-density-pad, 1));
   background: var(--sz-track);
   border: 1px solid var(--sz-border);
   border-radius: 6px;
@@ -406,7 +414,7 @@
 
 .pnode th,
 .pnode td {
-  padding: 0.75rem 1rem;                        /* generous cell padding */
+  padding: calc(0.75rem * var(--sz-density-pad, 1)) calc(1rem * var(--sz-density-pad, 1)); /* generous cell padding */
   border: 1px solid var(--sz-border);
   text-align: left;
   vertical-align: top;
