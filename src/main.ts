@@ -30,6 +30,7 @@ import { getRecentFiles, addRecentFile, clearRecentFiles } from './state/recent-
 import { initTheme, getThemePref, setThemePref } from './state/theme';
 import { initAccent } from './state/accent';
 import { initAnchorVisibility } from './state/anchor-visibility';
+import { initDensity } from './state/density';
 import {
   mountContentMap,
   buildMapModel,
@@ -84,6 +85,11 @@ const accentInitTeardown = initAccent();
 // sync, state/anchor-visibility.ts). No UI in the main window subscribes to
 // it yet, so no callback is needed here.
 const anchorVisibilityInitTeardown = initAnchorVisibility();
+// Same pattern again: apply the saved reading density immediately (before
+// first paint) and keep it live if the Settings window changes it. This is
+// the window where density is actually visible — reading.css/base.css key
+// their density multipliers off the `data-density` attribute this stamps.
+const densityInitTeardown = initDensity();
 
 // Cross-window "current document" bridge (Task 12): the settings webview's
 // Prompt tab needs to know which document is open — to enable "This
@@ -1572,6 +1578,7 @@ window.addEventListener('DOMContentLoaded', () => {
     themeInitTeardown();
     accentInitTeardown();
     anchorVisibilityInitTeardown();
+    densityInitTeardown();
   });
 
   void installMenu();

@@ -2,12 +2,13 @@
 //
 // Bundles alone into settings.html, same discipline as inference-tab.ts:
 // never imports the viewport, store, or engine modules. The accent-color
-// swatch picker, theme radios, and anchor-visibility checkbox each own their
-// own init function, kept cleanly separable.
+// swatch picker, theme radios, density radios, and anchor-visibility
+// checkbox each own their own init function, kept cleanly separable.
 
 import { getAccentPref, setAccentPref } from '../../state/accent';
 import { getThemePref, setThemePref, type ThemePref } from '../../state/theme';
 import { getShowAnchors, setShowAnchors } from '../../state/anchor-visibility';
+import { getDensityPref, setDensityPref, type DensityPref } from '../../state/density';
 
 /** Presets shown as swatch buttons (user-ratified set), custom via <input type="color">. */
 const ACCENT_PRESETS = ['#8080ff', '#ff6b35', '#2fa26e', '#e0529c', '#d9a514', '#4aa8d8'];
@@ -89,6 +90,33 @@ function initThemeRadios(): (pref: ThemePref) => void {
 }
 
 /**
+ * Wire `#density-group`'s radios: reflect `getDensityPref()` on load, write
+ * `setDensityPref(value)` on `change`. Same shape as `initThemeRadios()`
+ * above — returns a `reflectDensity` callback so the entry can keep these
+ * radios in sync when the pref changes externally (another window's
+ * `storage` event).
+ */
+function initDensityRadios(): (pref: DensityPref) => void {
+  const group = document.getElementById('density-group');
+  const radios = group
+    ? Array.from(group.querySelectorAll<HTMLInputElement>('input[name="density"]'))
+    : [];
+
+  function reflectRadios(pref: DensityPref): void {
+    for (const radio of radios) radio.checked = radio.value === pref;
+  }
+
+  for (const radio of radios) {
+    radio.addEventListener('change', () => {
+      if (radio.checked) setDensityPref(radio.value as DensityPref);
+    });
+  }
+
+  reflectRadios(getDensityPref());
+  return reflectRadios;
+}
+
+/**
  * Wire `#show-anchors`: reflect `getShowAnchors()` on load, write
  * `setShowAnchors(checked)` on `change`. No returned sync callback (unlike
  * theme) — nothing else in this window needs to observe the preference
@@ -117,9 +145,11 @@ function initAnchorVisibilityCheckbox(): void {
 export function initGeneralTab(): {
   reflectTheme: (pref: ThemePref) => void;
   reflectAccent: (hex: string) => void;
+  reflectDensity: (pref: DensityPref) => void;
 } {
   const reflectAccent = initAccentSwatches();
   const reflectTheme = initThemeRadios();
+  const reflectDensity = initDensityRadios();
   initAnchorVisibilityCheckbox();
-  return { reflectTheme, reflectAccent };
+  return { reflectTheme, reflectAccent, reflectDensity };
 }

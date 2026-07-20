@@ -20,10 +20,19 @@
       </div>
       <div class="field">
         <span class="field__label">Appearance</span>
-        <fieldset id="theme-group">
+        <fieldset id="theme-group" class="segmented">
           <label><input type="radio" name="theme" value="light" /> Light</label>
           <label><input type="radio" name="theme" value="dark" /> Dark</label>
           <label><input type="radio" name="theme" value="system" /> System</label>
+        </fieldset>
+      </div>
+      <div class="field">
+        <span class="field__label">Density</span>
+        <p class="field__hint">Adjusts type size and spacing in the reading view.</p>
+        <fieldset id="density-group" class="segmented">
+          <label><input type="radio" name="density" value="default" checked /> Default</label>
+          <label><input type="radio" name="density" value="comfortable" /> Comfortable</label>
+          <label><input type="radio" name="density" value="compact" /> Compact</label>
         </fieldset>
       </div>
       <label class="checkbox-field"><input type="checkbox" id="show-anchors" /> Show anchor IDs</label>
@@ -63,7 +72,7 @@
       <div id="status-line" role="status"></div>
     </section>
     <section data-tab="prompt" hidden>
-      <fieldset id="template-scope">
+      <fieldset id="template-scope" class="segmented">
         <label><input type="radio" name="tscope" value="default" checked /> Default</label>
         <label><input type="radio" name="tscope" value="doc" /> This document</label>
       </fieldset>

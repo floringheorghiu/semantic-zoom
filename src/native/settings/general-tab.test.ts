@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { getThemePref } from '../../state/theme';
 import { getShowAnchors } from '../../state/anchor-visibility';
+import { getDensityPref } from '../../state/density';
 import { initGeneralTab } from './general-tab';
 
 function mountGeneral(): void {
@@ -11,6 +12,11 @@ function mountGeneral(): void {
       <label><input type="radio" name="theme" value="dark" /> Dark</label>
       <label><input type="radio" name="theme" value="system" /> System</label>
     </fieldset>
+    <fieldset id="density-group">
+      <label><input type="radio" name="density" value="default" checked /> Default</label>
+      <label><input type="radio" name="density" value="comfortable" /> Comfortable</label>
+      <label><input type="radio" name="density" value="compact" /> Compact</label>
+    </fieldset>
     <label><input type="checkbox" id="show-anchors" /> Show anchor IDs</label>`;
 }
 
@@ -18,6 +24,7 @@ describe('general tab theme radios', () => {
   beforeEach(() => {
     window.localStorage.clear();
     document.documentElement.removeAttribute('data-hide-anchors');
+    document.documentElement.removeAttribute('data-density');
     mountGeneral();
   });
   it('reflects and writes the theme pref', () => {
@@ -50,6 +57,26 @@ describe('general tab theme radios', () => {
     reflectAccent('#ff6b35');
 
     expect(swatch.hasAttribute('data-active')).toBe(true);
+  });
+
+  it('reflects and writes the density pref', () => {
+    initGeneralTab();
+    const compact = document.querySelector<HTMLInputElement>('input[name="density"][value="compact"]')!;
+    const defaultRadio = document.querySelector<HTMLInputElement>('input[name="density"][value="default"]')!;
+    expect(defaultRadio.checked).toBe(true); // default pref
+    compact.click();
+    expect(getDensityPref()).toBe('compact');
+  });
+
+  it('reflects an external density change via the returned callback', () => {
+    const { reflectDensity } = initGeneralTab();
+    const comfortable = document.querySelector<HTMLInputElement>('input[name="density"][value="comfortable"]')!;
+    const compact = document.querySelector<HTMLInputElement>('input[name="density"][value="compact"]')!;
+
+    reflectDensity('comfortable');
+
+    expect(comfortable.checked).toBe(true);
+    expect(compact.checked).toBe(false);
   });
 
   it('reflects and writes the show-anchors pref', () => {

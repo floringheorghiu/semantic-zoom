@@ -89,7 +89,7 @@ body {
 }
 
 .pnode {
-  margin: 0 0 0.75rem;
+  margin: 0 0 calc(0.75rem * var(--sz-density-pad, 1));
 }
 
 /* `.pnode pre` (the raw code block) is skinned in reading.css alongside the

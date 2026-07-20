@@ -62,7 +62,32 @@
   --dim-fg:       #8a8f98;
   --dim-fg-faint: #a6abb3;
 
+  /* reading density (Default/Comfortable/Compact — state/density.ts owns
+     stamping data-density; 'default' = no attribute = these no-op values).
+     Multipliers, not raw sizes, so reading.css's existing rem-based rules
+     scale via calc() instead of duplicating every rule per density. Scoped
+     to the reading column only (§ below) — never applied to :root, so the
+     toolbar/empty-state/scrubber chrome (which also use rem) are unaffected. */
+  --sz-density-font: 1;
+  --sz-density-pad:  1;
+  --sz-density-line: 1.55;
+
   color-scheme: light;
+}
+
+/* Comfortable: larger type, slightly more breathing room. */
+:root[data-density="comfortable"] {
+  --sz-density-font: 1.08;
+  --sz-density-pad:  1.15;
+  --sz-density-line: 1.65;
+}
+
+/* Compact: smaller type, tighter rhythm — a genuinely denser reading view,
+   not just a smaller font. */
+:root[data-density="compact"] {
+  --sz-density-font: 0.92;
+  --sz-density-pad:  0.72;
+  --sz-density-line: 1.4;
 }
 
 /* Dark mapping (D-A) — opt-in via data-theme, NOT prefers-color-scheme.
