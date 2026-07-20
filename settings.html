@@ -5,115 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Settings — Semantic Zoom</title>
     <script type="module" src="/src/native/settings-form.ts" defer></script>
-    <style>
-      :root { color-scheme: light dark; }
-      body {
-        margin: 0;
-        padding: 20px;
-        font: 13px -apple-system, BlinkMacSystemFont, sans-serif;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-      }
-      label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; }
-      input, select {
-        font: inherit;
-        padding: 6px 8px;
-        border-radius: 6px;
-        border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
-        background: color-mix(in srgb, currentColor 4%, transparent);
-        color: inherit;
-      }
-      #key-row[hidden], #model-custom-row[hidden], #template-add-custom[hidden] { display: none; }
-      #status-line { font-size: 12px; opacity: 0.75; min-height: 1.2em; }
-      .row { display: flex; gap: 8px; }
-      button {
-        font: inherit;
-        padding: 6px 14px;
-        border-radius: 6px;
-        border: none;
-        cursor: pointer;
-      }
-      #save { background: #2f6fed; color: white; }
-      #remove-key { background: transparent; border: 1px solid color-mix(in srgb, currentColor 25%, transparent); color: inherit; }
-      #tab-bar {
-        display: flex;
-        gap: 4px;
-        padding: 3px;
-        border-radius: 8px;
-        background: color-mix(in srgb, currentColor 6%, transparent);
-        align-self: flex-start;
-      }
-      #tab-bar [role="tab"] {
-        padding: 5px 12px;
-        border-radius: 6px;
-        border: none;
-        background: transparent;
-        color: inherit;
-        font: inherit;
-        font-weight: 600;
-        cursor: pointer;
-      }
-      #tab-bar [role="tab"][aria-selected="true"] {
-        background: var(--sz-accent, #8080ff);
-        color: white;
-      }
-      section[data-tab] { display: flex; flex-direction: column; gap: 12px; }
-      section[data-tab][hidden] { display: none; }
-      #accent-swatches { align-items: center; flex-wrap: wrap; }
-      .swatch {
-        width: 24px;
-        height: 24px;
-        padding: 0;
-        border-radius: 50%;
-        border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
-        box-shadow: none;
-        cursor: pointer;
-      }
-      .swatch[data-active="true"] {
-        box-shadow: 0 0 0 2px var(--sz-bg, canvas), 0 0 0 4px var(--sz-accent, #8080ff);
-      }
-      #accent-custom {
-        width: 28px;
-        height: 24px;
-        padding: 0;
-        border-radius: 6px;
-        cursor: pointer;
-      }
-      #theme-group {
-        display: flex;
-        gap: 4px;
-        padding: 3px;
-        margin: 0;
-        border: none;
-        border-radius: 8px;
-        background: color-mix(in srgb, currentColor 6%, transparent);
-        align-self: flex-start;
-      }
-      #theme-group label {
-        display: flex;
-        flex-direction: row;
-        align-items: center;
-        gap: 0;
-        padding: 5px 14px;
-        border-radius: 6px;
-        font-weight: 600;
-        cursor: pointer;
-      }
-      #theme-group label:has(input:checked) {
-        background: var(--sz-accent, #8080ff);
-        color: white;
-      }
-      #theme-group input[type='radio'] {
-        position: absolute;
-        opacity: 0;
-        pointer-events: none;
-      }
-      #theme-group label:has(input:focus-visible) {
-        outline: 2px solid var(--sz-accent, #8080ff);
-        outline-offset: 1px;
-      }
-    </style>
   </head>
   <body>
     <div id="tab-bar" role="tablist">
@@ -122,43 +13,46 @@
       <button role="tab" data-tab="prompt" aria-selected="false">Prompt</button>
     </div>
     <section data-tab="general">
-      <label>Accent color
-        <div class="row" id="accent-swatches"></div>
-      </label>
-      <div>
-        <span style="font-weight: 600; display: block; margin-bottom: 4px;">Appearance</span>
+      <div class="field">
+        <span class="field__label">Accent color</span>
+        <p class="field__hint">Tints the active view state and highlights across the app.</p>
+        <div id="accent-swatches"></div>
+      </div>
+      <div class="field">
+        <span class="field__label">Appearance</span>
         <fieldset id="theme-group">
           <label><input type="radio" name="theme" value="light" /> Light</label>
           <label><input type="radio" name="theme" value="dark" /> Dark</label>
           <label><input type="radio" name="theme" value="system" /> System</label>
         </fieldset>
       </div>
-      <label><input type="checkbox" id="show-anchors" /> Show anchor IDs</label>
+      <label class="checkbox-field"><input type="checkbox" id="show-anchors" /> Show anchor IDs</label>
     </section>
     <section data-tab="inference" hidden>
-      <label for="engine">Generation Engine
+      <p class="field__hint">Choose what generates zoom summaries when a document needs them.</p>
+      <label class="field" for="engine">Generation Engine
         <select id="engine">
           <option value="remote">Remote endpoint</option>
           <option value="custom-local">Custom local server</option>
           <option value="ollama">Ollama (local)</option>
         </select>
       </label>
-      <label for="provider">Provider
+      <label class="field" for="provider">Provider
         <select id="provider"></select>
       </label>
-      <label for="base-url">Base URL
+      <label class="field" for="base-url">Base URL
         <input id="base-url" type="text" placeholder="http://localhost:11434/v1" />
       </label>
-      <label for="model">Model
+      <label class="field" for="model">Model
         <select id="model"></select>
       </label>
       <div id="model-custom-row" hidden>
-        <label for="model-custom">Custom model name
+        <label class="field" for="model-custom">Custom model name
           <input id="model-custom" type="text" placeholder="model-name" />
         </label>
       </div>
       <div id="key-row" hidden>
-        <label for="api-key">API key
+        <label class="field" for="api-key">API key
           <input id="api-key" type="password" autocomplete="off" placeholder="sk-…" />
         </label>
       </div>
@@ -174,11 +68,11 @@
         <label><input type="radio" name="tscope" value="doc" /> This document</label>
       </fieldset>
       <div id="template-scope-hint" hidden>Open a document to set a template just for it.</div>
-      <label for="template-select">Template
+      <label class="field" for="template-select">Template
         <select id="template-select"></select>
       </label>
       <div id="template-add-custom" hidden>
-        <label for="template-new-name">New template name
+        <label class="field" for="template-new-name">New template name
           <input id="template-new-name" type="text" placeholder="Template name" autocomplete="off" />
         </label>
         <div class="row">
@@ -186,8 +80,8 @@
           <button id="template-add-cancel" type="button">Cancel</button>
         </div>
       </div>
-      <label for="template-text">Instructions
-        <textarea id="template-text" rows="14" spellcheck="false"></textarea>
+      <label class="field" for="template-text">Instructions
+        <textarea id="template-text" rows="11" spellcheck="false"></textarea>
       </label>
       <div class="row">
         <button id="template-save" type="button">Save</button>
