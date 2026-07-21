@@ -264,7 +264,7 @@ export function fnv1a(input: string): string {
 }
 
 export function cacheKey(source: string, theme: string, providerVersion: string): string {
-  return fnv1a(`${source} ${theme} ${providerVersion}`);
+  return fnv1a(`${source}|${theme}|${providerVersion}`);
 }
 
 const DEFAULT_MAX_ENTRIES = 50;
