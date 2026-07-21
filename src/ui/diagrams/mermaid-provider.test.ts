@@ -14,10 +14,15 @@ vi.mock('mermaid', () => ({
 }));
 
 import mermaid from 'mermaid';
-import { mermaidProvider } from './mermaid-provider';
+import { mermaidProvider, resetDiagramCacheForTests } from './mermaid-provider';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The module-level render cache is a singleton (by design — it must
+  // persist across the app's lifetime, not per-test). Clearing it here
+  // removes the test-order/shared-state hazard at the source, on top of
+  // (not instead of) the distinct source strings already used below.
+  resetDiagramCacheForTests();
 });
 
 test('language is "mermaid"', () => {
