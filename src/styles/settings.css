@@ -331,3 +331,54 @@ button:focus-visible {
   padding-top: 4px;
   border-top: 1px solid var(--sz-hairline);
 }
+
+/* ---------- Updates tab ---------- */
+
+#updates-changelog {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--sz-border);
+  border-radius: 8px;
+  background: var(--sz-track);
+}
+
+.updates-changelog__entry h4 {
+  margin: 12px 0 4px;
+  font: 700 12.5px/1.3 var(--sz-font);
+}
+
+.updates-changelog__entry:first-child h4 {
+  margin-top: 0;
+}
+
+.updates-changelog__entry p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--sz-muted);
+}
+
+#updates-coffee {
+  padding-top: 12px;
+  border-top: 1px solid var(--sz-hairline);
+}
+
+#updates-coffee p {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--sz-muted);
+}
+
+#updates-coffee-link {
+  display: inline-block;
+  padding: 8px 16px;
+  border-radius: var(--sz-radius-pill);
+  background: var(--sz-accent);
+  color: #fff;
+  font: 600 12.5px/1 var(--sz-font);
+  text-decoration: none;
+}
+
+#updates-coffee-link:hover {
+  opacity: 0.9;
+}
