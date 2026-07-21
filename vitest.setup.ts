@@ -32,3 +32,16 @@ Object.defineProperty(globalThis, 'localStorage', {
   enumerable: false,
   value: new MemoryStorage(),
 });
+
+// jsdom doesn't implement HTMLDialogElement.showModal() / close() natively.
+// Add minimal polyfills so update-dialog tests can work.
+if (!HTMLDialogElement.prototype.showModal) {
+  HTMLDialogElement.prototype.showModal = function () {
+    (this as any).open = true;
+  };
+}
+if (!HTMLDialogElement.prototype.close) {
+  HTMLDialogElement.prototype.close = function () {
+    (this as any).open = false;
+  };
+}

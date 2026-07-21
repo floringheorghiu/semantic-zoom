@@ -1,0 +1,117 @@
+/* update-dialog.css — the Sparkle/Typora-style update-found + download-
+   progress dialog (src/ui/update-dialog.ts). Reuses the app's token system
+   (tokens.css) so it looks native to the rest of the app. */
+
+.update-dialog {
+  width: min(420px, 90vw);
+  padding: 20px;
+  border: none;
+  border-radius: var(--sz-radius-card);
+  background: var(--sz-bg);
+  color: var(--sz-ink);
+  font: 13px/1.5 var(--sz-font);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+}
+
+.update-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.update-dialog__icon {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  background: var(--sz-accent);
+}
+
+.update-dialog__headline {
+  margin: 0 0 6px;
+  font: 700 15px/1.3 var(--sz-font);
+}
+
+.update-dialog__version-line,
+.update-dialog__notes-label,
+.update-dialog__progress-label {
+  margin: 0 0 8px;
+  color: var(--sz-muted);
+}
+
+.update-dialog__notes {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--sz-border);
+  border-radius: 8px;
+  background: var(--sz-track);
+}
+
+.update-dialog__notes-version {
+  margin: 12px 0 4px;
+  font: 700 13px/1.3 var(--sz-font);
+}
+
+.update-dialog__notes-version:first-child {
+  margin-top: 0;
+}
+
+.update-dialog__checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  cursor: pointer;
+}
+
+.update-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.update-dialog__actions button {
+  font: 600 12.5px/1 var(--sz-font);
+  padding: 8px 16px;
+  border-radius: var(--sz-radius-pill);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.update-dialog__install,
+.update-dialog__cancel {
+  background: var(--sz-btn-bg);
+  border-color: var(--sz-btn-border);
+  color: var(--sz-ink);
+}
+
+.update-dialog__skip {
+  margin-right: auto;
+  background: transparent;
+  color: var(--sz-muted);
+}
+
+.update-dialog__remind-later {
+  background: var(--sz-accent);
+  color: #fff;
+}
+
+.update-dialog__progress-track {
+  height: 6px;
+  margin-bottom: 8px;
+  border-radius: 3px;
+  background: var(--sz-track);
+  overflow: hidden;
+}
+
+.update-dialog__progress-bar {
+  height: 100%;
+  width: 0%;
+  background: var(--sz-accent);
+}
+
+.update-dialog__progress-bytes {
+  margin: 0 0 16px;
+  font-size: 12px;
+  color: var(--sz-muted);
+}
