@@ -18,6 +18,8 @@ import {
   buildSidLabel,
   renderSummaryBody,
 } from './cards';
+import { getDiagramProvider } from './diagrams/provider';
+import { mountDiagram } from './diagrams/diagram-component';
 
 // `renderSummaryBody` moved to ./cards (the card builders need it, and importing
 // it back from here would be a cycle). Re-exported so existing importers — and
@@ -185,6 +187,11 @@ export function decoratePnode(node: HTMLElement): void {
     scroll.appendChild(tbl);
   }
   for (const pre of node.querySelectorAll<HTMLElement>('pre')) {
+    const lang = pre.querySelector('code')?.className.match(/language-(\S+)/)?.[1];
+    if (lang && getDiagramProvider(lang)) {
+      mountDiagram(pre, lang);
+      continue;
+    }
     wrapCodeBlock(pre);
   }
 }
