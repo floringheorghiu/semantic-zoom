@@ -34,6 +34,7 @@ pub fn run() {
             commands::provider_config::get_update_prefs,
             commands::provider_config::set_update_prefs,
             commands::window::open_settings_window,
+            commands::window::request_update_check,
             commands::remove_payload::remove_payload,
             commands::help::install_help_file,
             commands::generation_history::get_generation_history,
