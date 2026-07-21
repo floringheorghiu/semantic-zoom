@@ -1,6 +1,19 @@
 import { test, expect, vi } from 'vitest';
 import { mountUpdateDialog } from './update-dialog';
 
+// jsdom doesn't implement HTMLDialogElement.showModal() / close() natively.
+// Add minimal polyfills so these tests can work.
+if (!HTMLDialogElement.prototype.showModal) {
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+}
+if (!HTMLDialogElement.prototype.close) {
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+  };
+}
+
 function foundOpts(overrides: Partial<Parameters<ReturnType<typeof mountUpdateDialog>['showFound']>[0]> = {}) {
   return {
     currentVersion: '0.8.0',
