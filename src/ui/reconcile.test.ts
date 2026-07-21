@@ -130,3 +130,30 @@ test('changed child-list rebuilds that group; siblings reused', () => {
   expect(build).toHaveBeenCalledTimes(1);
   expect(build).toHaveBeenCalledWith('S-s2-0');
 });
+
+test('onRemove is called for each stale node just before it is removed', () => {
+  const buildGroup = makeBuildGroup();
+  const column = guardedColumn();
+  const removed: HTMLElement[] = [];
+
+  let prev = reconcile(
+    column,
+    makeTable([['S-a-0', ['P-a-0']], ['S-b-0', ['P-b-0']]]),
+    buildIndex(makeTable([['S-a-0', ['P-a-0']], ['S-b-0', ['P-b-0']]])),
+    new Map(),
+    buildGroup,
+  );
+
+  // Second table drops section S-b-0 entirely — its node is now stale.
+  const removedNode = prev.get('S-b-0')!;
+  reconcile(
+    column,
+    makeTable([['S-a-0', ['P-a-0']]]),
+    buildIndex(makeTable([['S-a-0', ['P-a-0']]])),
+    prev,
+    buildGroup,
+    (el) => removed.push(el),
+  );
+
+  expect(removed).toEqual([removedNode]);
+});

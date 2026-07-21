@@ -18,6 +18,9 @@ import {
 } from './ui/viewport';
 import { buildHeader, titlePid } from './ui/header';
 import { buildRawLevel } from './ui/raw-markdown';
+import { registerDiagramProvider } from './ui/diagrams/provider';
+import { mermaidProvider } from './ui/diagrams/mermaid-provider';
+import { teardownDiagramsIn } from './ui/diagrams/diagram-component';
 import { mountZoomScrubber } from './ui/zoom-scrubber';
 import { mountCaret, nextParagraph } from './ui/caret';
 import { nextScale, SCALE_DEFAULT } from './ui/content-scale';
@@ -69,6 +72,7 @@ import './styles/empty-state.css';
 import './styles/theme-switcher.css';
 import './styles/generate-picker.css';
 import './styles/generation-tooltip.css';
+import './styles/diagrams.css';
 
 // Apply the saved theme immediately at module evaluation — before any UI
 // mounts — so the first paint is already in the right palette. The callback
@@ -90,6 +94,7 @@ const anchorVisibilityInitTeardown = initAnchorVisibility();
 // the window where density is actually visible — reading.css/base.css key
 // their density multipliers off the `data-density` attribute this stamps.
 const densityInitTeardown = initDensity();
+registerDiagramProvider(mermaidProvider);
 
 // Cross-window "current document" bridge (Task 12): the settings webview's
 // Prompt tab needs to know which document is open — to enable "This
@@ -1657,8 +1662,13 @@ async function handleDocChanged(): Promise<void> {
         const table = newResult.table;
         const index = currentIndex;
         const skipPid = titlePid(table);
-        prevGroups = reconcile(column, table, index, prevGroups, (sid) =>
-          buildGroup(table, index, sid, skipPid),
+        prevGroups = reconcile(
+          column,
+          table,
+          index,
+          prevGroups,
+          (sid) => buildGroup(table, index, sid, skipPid),
+          teardownDiagramsIn,
         );
         // reconcile only manages `.pgroup` children; re-prepend a fresh header
         // (its paragraph count may have changed on reload) as the column's head.

@@ -4,6 +4,7 @@ import { renderLevel } from './viewport';
 import { livePids } from './caret';
 import { buildIndex, type LookupTable } from '../engine/schema';
 import { sampleTable } from '../engine/schema.test';
+import { registerDiagramProvider, clearDiagramProviders, type DiagramProvider } from './diagrams/provider';
 
 // No TS-side payload parser exists (Rust owns disk truth). Slice the JSON
 // block out directly, same as `load_document` locates it.
@@ -73,6 +74,44 @@ test('a prose paragraph (no <pre>) gets no .code-wrap', () => {
   renderLevel(root, sampleTable, buildIndex(sampleTable), 0);
   const proseNode = root.querySelector('.pnode[data-kind="prose"]')!;
   expect(proseNode.querySelector('.code-wrap')).toBeNull();
+});
+
+test('a code paragraph with a registered diagram language mounts a .diagram instead of .code-wrap', () => {
+  clearDiagramProviders();
+  const provider: DiagramProvider = {
+    language: 'mermaid',
+    validate: () => ({ ok: true }),
+    render: async () => '<svg></svg>',
+    extractGraph: () => ({ nodes: [], edges: [] }),
+  };
+  registerDiagramProvider(provider);
+
+  const table = structuredClone(sampleTable);
+  const codePid = Object.keys(table.paragraphs).find((pid) => table.paragraphs[pid].kind === 'code')!;
+  table.paragraphs[codePid].html = '<pre><code class="language-mermaid">graph TD; A--&gt;B</code></pre>';
+
+  const root = document.createElement('main');
+  renderLevel(root, table, buildIndex(table), 0);
+
+  const codeNode = root.querySelector('.pnode[data-kind="code"]')!;
+  expect(codeNode.querySelector('.diagram')).toBeTruthy();
+  expect(codeNode.querySelector('.code-wrap')).toBeNull();
+
+  clearDiagramProviders();
+});
+
+test('a code paragraph with an UNregistered language falls back to .code-wrap as before', () => {
+  clearDiagramProviders();
+  const table = structuredClone(sampleTable);
+  const codePid = Object.keys(table.paragraphs).find((pid) => table.paragraphs[pid].kind === 'code')!;
+  table.paragraphs[codePid].html = '<pre><code class="language-python">print(1)</code></pre>';
+
+  const root = document.createElement('main');
+  renderLevel(root, table, buildIndex(table), 0);
+
+  const codeNode = root.querySelector('.pnode[data-kind="code"]')!;
+  expect(codeNode.querySelector('.code-wrap')).toBeTruthy();
+  expect(codeNode.querySelector('.diagram')).toBeNull();
 });
 
 // --- livePids on a REAL rendered document: the promoted-title regression ---
