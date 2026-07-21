@@ -143,7 +143,7 @@ git commit -m "Add tauri-plugin-updater and tauri-plugin-process, grant capabili
 - Modify: `src-tauri/tauri.conf.json`
 
 **Interfaces:**
-- Produces: a real Ed25519 public key embedded in `tauri.conf.json` at `plugin.updater.pubkey`, and the matching private key + password held only as GitHub Actions secrets (Task 3 consumes them).
+- Produces: a real Ed25519 public key embedded in `tauri.conf.json` at `plugins.updater.pubkey`, and the matching private key + password held only as GitHub Actions secrets (Task 3 consumes them).
 
 - [ ] **Step 1: Generate the keypair**
 
@@ -155,7 +155,7 @@ This prompts for a password (used to encrypt the private key file) and prints th
 
 - [ ] **Step 2: Add the `updater` block to `tauri.conf.json`**
 
-Add a new top-level `"plugin"` key (sibling of `"bundle"`) with the public key from Step 1 pasted in verbatim:
+Add a new top-level `"plugins"` key (sibling of `"bundle"`) with the public key from Step 1 pasted in verbatim:
 
 ```json
 {
@@ -208,7 +208,7 @@ Add a new top-level `"plugin"` key (sibling of `"bundle"`) with the public key f
       "icons/icon.ico"
     ]
   },
-  "plugin": {
+  "plugins": {
     "updater": {
       "endpoints": [
         "https://github.com/floringheorghiu/semantic-zoom/releases/latest/download/latest.json"
@@ -2216,7 +2216,7 @@ git commit -m "Wire the auto-updater into main.ts: startup check, dialog, auto-i
 Per standing practice (background sessions cannot run the WebKit pass — this needs the user).
 
 - [ ] Run the real app (`npm run tauri dev` or a local `npm run build:dmg` install) with the empty-state screen showing.
-- [ ] Temporarily point `tauri.conf.json`'s `plugin.updater.endpoints` at a throwaway `latest.json` (e.g. a Gist or a second GitHub Release) advertising a version newer than the running build, to force the "update found" path without needing a real tagged release.
+- [ ] Temporarily point `tauri.conf.json`'s `plugins.updater.endpoints` at a throwaway `latest.json` (e.g. a Gist or a second GitHub Release) advertising a version newer than the running build, to force the "update found" path without needing a real tagged release.
 - [ ] Confirm: the update-found dialog appears unprompted on startup (with `auto_install` off), showing the release notes, with working Skip / Remind Me Later / Install buttons.
 - [ ] Confirm: clicking Install shows the download-progress view with a moving bar and byte counts, then prompts for restart.
 - [ ] Confirm: opening Settings → Updates tab shows the right current version, changelog, and that "Check for Updates now" opens the same dialog style.
