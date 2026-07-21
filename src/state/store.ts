@@ -26,6 +26,10 @@ export interface AppState {
       provider needs one) — drives the Generate-affordance visibility matrix
       (§8.5, §2.7's stub UX). Refreshed on startup and after Settings saves. */
   providerConfigured: boolean;
+  /** Set by a diagram node click (src/ui/diagrams/diagram-component.ts).
+      Inert in Phase 1 — no reducer/UI consumes it yet, same precedent as
+      the Engine B stub (D3): the hook and event exist, nothing acts on it. */
+  selectedDiagramNode: { diagramId: string; nodeId: string; label: string } | null;
 }
 
 export type Action =
@@ -37,7 +41,8 @@ export type Action =
   | { type: 'PROVIDER_STATUS_LOADED'; configured: boolean }
   | { type: 'SYNTHESIS_STARTED' }
   | { type: 'SYNTHESIS_SUCCEEDED'; table: import('../engine/schema').LookupTable }
-  | { type: 'SYNTHESIS_FAILED'; error: string };
+  | { type: 'SYNTHESIS_FAILED'; error: string }
+  | { type: 'DIAGRAM_NODE_SELECTED'; diagramId: string; nodeId: string; label: string };
 
 const initial: AppState = {
   zoom: 0, doc: null, index: null, raw: '', status: 'empty',
@@ -45,6 +50,7 @@ const initial: AppState = {
   activeGroupHead: null,
   lastCaretIn: new Map(), lastAnchorIn: new Map(),
   providerConfigured: false,
+  selectedDiagramNode: null,
 };
 
 const state$ = new BehaviorSubject<AppState>(initial);
@@ -135,5 +141,11 @@ export function reduce(s: AppState, a: Action): AppState {
       // Back to untagged — the Generate affordance reappears; the calm
       // toast (status-badge's existing pattern) carries the error, not state.
       return s.status === 'synthesizing' ? { ...s, status: 'untagged' } : s;
+
+    case 'DIAGRAM_NODE_SELECTED':
+      return {
+        ...s,
+        selectedDiagramNode: { diagramId: a.diagramId, nodeId: a.nodeId, label: a.label },
+      };
   }
 }
