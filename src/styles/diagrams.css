@@ -1,0 +1,40 @@
+/* src/styles/diagrams.css */
+.diagram {
+  position: relative;
+  margin: 0.5em 0;
+}
+
+.diagram__svg-host {
+  width: 100%;
+  min-height: 120px;
+  border: 1px solid var(--sz-border);
+  border-radius: var(--sz-radius-card);
+  overflow: hidden;
+}
+
+.diagram__svg-host svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.diagram__error {
+  color: var(--sz-warn-text);
+  background: color-mix(in srgb, var(--sz-warn) 12%, transparent);
+  border: 1px solid var(--sz-warn);
+  border-radius: var(--sz-radius-card);
+  padding: 6px 10px;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.diagram__source-toggle {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--sz-muted);
+  background: none;
+  border: 1px solid var(--sz-border);
+  border-radius: var(--sz-radius-pill);
+  padding: 2px 10px;
+  cursor: pointer;
+}
