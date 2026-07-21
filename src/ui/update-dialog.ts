@@ -35,7 +35,7 @@ export interface UpdateDialogHandle {
 }
 
 function formatBytes(bytes: number): string {
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / 1_000_000).toFixed(1)} MB`;
 }
 
 /** Mount the (initially empty, closed) dialog shell into `root`. Call

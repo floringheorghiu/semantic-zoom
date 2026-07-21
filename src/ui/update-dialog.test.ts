@@ -113,3 +113,60 @@ test('renders one heading per release when there are several unreleased-to-the-u
   expect(headings[0].textContent).toBe('0.9.0');
   expect(headings[1].textContent).toBe('0.8.1');
 });
+
+test('showProgress renders the download view with the given byte counts', () => {
+  const root = document.createElement('div');
+  const handle = mountUpdateDialog(root);
+  handle.showProgress({ downloadedBytes: 11_000_000, totalBytes: 14_400_000, onCancel: vi.fn() });
+
+  expect(root.querySelector('.update-dialog__headline')?.textContent).toBe('Updating Semantic Zoom');
+  expect(root.querySelector('.update-dialog__progress-bytes')?.textContent).toBe('11.0 MB of 14.4 MB');
+  const bar = root.querySelector<HTMLElement>('.update-dialog__progress-bar');
+  const expectedPct = (11_000_000 / 14_400_000) * 100;
+  expect(bar?.style.width).toBe(`${expectedPct}%`);
+});
+
+test('updateProgress updates the bar width and byte-count text in place', () => {
+  const root = document.createElement('div');
+  const handle = mountUpdateDialog(root);
+  handle.showProgress({ downloadedBytes: 0, totalBytes: 10_000_000, onCancel: vi.fn() });
+
+  handle.updateProgress(5_000_000, 10_000_000);
+
+  expect(root.querySelector('.update-dialog__progress-bytes')?.textContent).toBe('5.0 MB of 10.0 MB');
+  expect(root.querySelector<HTMLElement>('.update-dialog__progress-bar')?.style.width).toBe('50%');
+});
+
+test('Cancel calls onCancel and closes the dialog', () => {
+  const root = document.createElement('div');
+  const handle = mountUpdateDialog(root);
+  const onCancel = vi.fn();
+  handle.showProgress({ downloadedBytes: 0, totalBytes: 10_000_000, onCancel });
+
+  root.querySelector<HTMLButtonElement>('.update-dialog__cancel')!.click();
+  expect(onCancel).toHaveBeenCalledOnce();
+  expect(root.querySelector('dialog')?.open).toBeFalsy();
+});
+
+test('switching from the found view to the progress view reuses the same dialog element (Install -> download hand-off)', () => {
+  const root = document.createElement('div');
+  const handle = mountUpdateDialog(root);
+  handle.showFound({
+    currentVersion: '0.8.0',
+    latestVersion: '0.9.0',
+    releaseNotes: [],
+    autoInstall: false,
+    onAutoInstallChange: vi.fn(),
+    onSkip: vi.fn(),
+    onRemindLater: vi.fn(),
+    onInstall: vi.fn(),
+  });
+  const dialogEl = root.querySelector('dialog');
+
+  handle.showProgress({ downloadedBytes: 0, totalBytes: 1000, onCancel: vi.fn() });
+
+  expect(root.querySelectorAll('dialog')).toHaveLength(1);
+  expect(root.querySelector('dialog')).toBe(dialogEl);
+  expect(root.querySelector('.update-dialog__install')).toBeNull();
+  expect(root.querySelector('.update-dialog__progress-bar')).not.toBeNull();
+});
