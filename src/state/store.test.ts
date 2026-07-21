@@ -33,6 +33,7 @@ test('DOC_CLOSED (File > Close, ⌘W) resets doc/index/raw/status/caret/activeGr
     lastCaretIn: new Map([['S-a-0', 'P-a-0']]),
     lastAnchorIn: new Map([['M1', 'S-a-0']]),
     providerConfigured: false,
+    selectedDiagramNode: null,
   };
 
   const next = reduce(loaded, { type: 'DOC_CLOSED' });
@@ -102,6 +103,28 @@ test('PROVIDER_STATUS_LOADED sets providerConfigured', () => {
   expect(next.providerConfigured).toBe(true);
 });
 
+test('DIAGRAM_NODE_SELECTED sets selectedDiagramNode', () => {
+  const s0 = reduce(initialForTest(), {
+    type: 'DIAGRAM_NODE_SELECTED',
+    diagramId: 'diagram-1',
+    nodeId: 'A',
+    label: 'Start',
+  });
+  expect(s0.selectedDiagramNode).toEqual({ diagramId: 'diagram-1', nodeId: 'A', label: 'Start' });
+});
+
+test('DIAGRAM_NODE_SELECTED does not touch unrelated state', () => {
+  const before = initialForTest();
+  const after = reduce(before, {
+    type: 'DIAGRAM_NODE_SELECTED',
+    diagramId: 'diagram-1',
+    nodeId: 'A',
+    label: 'Start',
+  });
+  expect(after.zoom).toBe(before.zoom);
+  expect(after.doc).toBe(before.doc);
+});
+
 function initialForTest(): AppState {
   return {
     zoom: 0, doc: null, index: null, raw: '', status: 'empty',
@@ -109,5 +132,6 @@ function initialForTest(): AppState {
     activeGroupHead: null,
     lastCaretIn: new Map(), lastAnchorIn: new Map(),
     providerConfigured: false,
+    selectedDiagramNode: null,
   };
 }
