@@ -150,4 +150,14 @@ describe('initUpdatesTab', () => {
       expect(entries[0].textContent).toContain('Fixed things.');
     });
   });
+
+  it('shows an empty-state message instead of a collapsed blank panel when there are no newer releases', async () => {
+    fetchReleasesSinceMock.mockResolvedValue([]);
+    initUpdatesTab();
+
+    await vi.waitFor(() => {
+      expect(document.querySelectorAll('#updates-changelog .updates-changelog__entry')).toHaveLength(0);
+      expect(document.querySelector('.updates-changelog__empty')?.textContent).toContain('latest version');
+    });
+  });
 });
