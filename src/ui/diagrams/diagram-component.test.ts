@@ -166,6 +166,33 @@ test('teardown destroys the svg-pan-zoom instance', async () => {
   expect(panZoomInstances[0].destroy).toHaveBeenCalledTimes(1);
 });
 
+test('sets the host aspect-ratio to match the rendered SVG viewBox, so fit+center has no letterboxing', async () => {
+  registerDiagramProvider(
+    stubProvider({
+      render: async () =>
+        '<svg viewBox="-8 -8 400 800"><g id="flowchart-A-0"><text>Start</text></g></svg>',
+    }),
+  );
+  const pre = makePre('graph TD; A-->B');
+  mountDiagram(pre, 'mermaid');
+  await vi.waitFor(() => {
+    expect(document.body.querySelector('.diagram__svg-host svg')).toBeTruthy();
+  });
+  const host = document.body.querySelector<HTMLElement>('.diagram__svg-host')!;
+  expect(host.style.aspectRatio).toBe('400 / 800');
+});
+
+test('leaves the host aspect-ratio unset when the rendered SVG has no parseable viewBox', async () => {
+  registerDiagramProvider(stubProvider({ render: async () => '<svg><text>Start</text></svg>' }));
+  const pre = makePre('graph TD; A-->B');
+  mountDiagram(pre, 'mermaid');
+  await vi.waitFor(() => {
+    expect(document.body.querySelector('.diagram__svg-host svg')).toBeTruthy();
+  });
+  const host = document.body.querySelector<HTMLElement>('.diagram__svg-host')!;
+  expect(host.style.aspectRatio).toBe('');
+});
+
 test('resizing the .diagram__svg-host re-fits the svg-pan-zoom instance', async () => {
   registerDiagramProvider(stubProvider());
   const pre = makePre('graph TD; A-->B');

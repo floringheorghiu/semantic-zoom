@@ -43,6 +43,23 @@ function findGraphNodeElement(svgEl: SVGSVGElement, nodeId: string): SVGElement 
   );
 }
 
+/**
+ * Read the rendered SVG's own `viewBox` (its intrinsic content ratio, e.g.
+ * `"-8 -8 400 800"` → 400×800) and apply it as the host's CSS aspect-ratio,
+ * so a subsequent `fit`+`center` has no leftover space to letterbox into.
+ * A no-op (leaves any existing inline aspect-ratio, including the CSS
+ * default, untouched) when the SVG has no `viewBox` or it doesn't parse —
+ * mermaid always emits one, but a stub/test SVG or a future provider might
+ * not.
+ */
+function setAspectRatioFromViewBox(host: HTMLElement, svgEl: SVGSVGElement): void {
+  const viewBox = svgEl.getAttribute('viewBox');
+  if (!viewBox) return;
+  const parts = viewBox.trim().split(/\s+/).map(Number);
+  if (parts.length !== 4 || parts.some(Number.isNaN) || parts[2] <= 0 || parts[3] <= 0) return;
+  host.style.aspectRatio = `${parts[2]} / ${parts[3]}`;
+}
+
 export function mountDiagram(pre: HTMLElement, lang: string): DiagramMountHandle | null {
   const provider = getDiagramProvider(lang);
   if (!provider) return null;
@@ -120,6 +137,17 @@ export function mountDiagram(pre: HTMLElement, lang: string): DiagramMountHandle
         svgHost.innerHTML = svg;
         const svgEl = svgHost.querySelector('svg');
         if (svgEl) {
+          // svg-pan-zoom's `fit`+`center` scales the diagram to fit inside
+          // the host WITHOUT distorting it (like `object-fit: contain`) —
+          // if the host's box ratio doesn't match the diagram's own
+          // viewBox ratio, that leaves empty letterboxing on one axis.
+          // Sizing the host to the diagram's own ratio (before pan-zoom
+          // measures it) means there's no mismatch left to letterbox.
+          // diagrams.css's default `aspect-ratio` only applies until this
+          // runs; `resize: vertical` still lets the user override it by
+          // hand afterward (a manual drag sets explicit height, which wins
+          // over aspect-ratio, same as it would for any CSS-sized box).
+          setAspectRatioFromViewBox(svgHost, svgEl);
           panZoomInstance = svgPanZoom(svgEl, {
             zoomEnabled: true,
             controlIconsEnabled: true,

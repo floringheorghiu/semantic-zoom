@@ -6,15 +6,18 @@
 
 .diagram__svg-host {
   width: 100%;
-  /* A real, fixed height (not min-height) — svg-pan-zoom measures this
-     container's actual box at init to compute its fit/pan/zoom scale, so a
-     collapsed-height container locks the whole diagram into a cramped,
-     clipped viewport with no usable room to pan or zoom into. 480px is a
-     generous default for a pan/zoomable viewport, not a "fit the content"
-     box — `resize: vertical` lets the user grow it further for a larger
-     diagram, same idea as a native <textarea>. */
-  height: 480px;
+  /* `aspect-ratio` (not a fixed height) — diagram-component.ts sets this
+     inline from the rendered SVG's own viewBox right before svg-pan-zoom
+     measures the container, so `fit`+`center` has no ratio mismatch left
+     to letterbox into: the box IS the diagram's shape, just scaled to the
+     column width. The 16/9 here is only the fallback before that inline
+     value lands (or for an SVG with no parseable viewBox). min/max-height
+     keep an extreme ratio (very tall/narrow, or very wide/short) from
+     taking over the page; `resize: vertical` still lets the user override
+     by hand, same idea as a native <textarea>. */
+  aspect-ratio: 16 / 9;
   min-height: 240px;
+  max-height: 640px;
   resize: vertical;
   border: 1px solid var(--sz-border);
   border-radius: var(--sz-radius-card);
