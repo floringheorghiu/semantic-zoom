@@ -1,14 +1,41 @@
 // src/ui/diagrams/diagram-component.test.ts
 import { test, expect, vi, beforeEach } from 'vitest';
 
-const panZoomInstances: Array<{ destroy: ReturnType<typeof vi.fn> }> = [];
+const panZoomInstances: Array<{
+  destroy: ReturnType<typeof vi.fn>;
+  resize: ReturnType<typeof vi.fn>;
+  fit: ReturnType<typeof vi.fn>;
+  center: ReturnType<typeof vi.fn>;
+}> = [];
 vi.mock('svg-pan-zoom', () => ({
   default: vi.fn(() => {
-    const instance = { destroy: vi.fn() };
+    const instance = { destroy: vi.fn(), resize: vi.fn(), fit: vi.fn(), center: vi.fn() };
     panZoomInstances.push(instance);
     return instance;
   }),
 }));
+
+// jsdom has no ResizeObserver — stub a controllable fake so tests can fire
+// resize callbacks on demand, and assert `observe`/`disconnect` calls.
+interface FakeResizeObserverEntry {
+  callback: () => void;
+  observe: (target: Element) => void;
+  disconnect: () => void;
+}
+const resizeObservers: FakeResizeObserverEntry[] = [];
+class FakeResizeObserver {
+  private entry: FakeResizeObserverEntry;
+  constructor(callback: () => void) {
+    this.entry = { callback, observe: vi.fn<(target: Element) => void>(), disconnect: vi.fn<() => void>() };
+    resizeObservers.push(this.entry);
+  }
+  observe(target: Element): void {
+    this.entry.observe(target);
+  }
+  disconnect(): void {
+    this.entry.disconnect();
+  }
+}
 
 import {
   registerDiagramProvider,
@@ -41,6 +68,8 @@ function makePre(source: string): HTMLElement {
 beforeEach(() => {
   clearDiagramProviders();
   panZoomInstances.length = 0;
+  resizeObservers.length = 0;
+  vi.stubGlobal('ResizeObserver', FakeResizeObserver);
   document.body.replaceChildren();
 });
 
@@ -135,6 +164,46 @@ test('teardown destroys the svg-pan-zoom instance', async () => {
   });
   handle.teardown();
   expect(panZoomInstances[0].destroy).toHaveBeenCalledTimes(1);
+});
+
+test('resizing the .diagram__svg-host re-fits the svg-pan-zoom instance', async () => {
+  registerDiagramProvider(stubProvider());
+  const pre = makePre('graph TD; A-->B');
+  mountDiagram(pre, 'mermaid');
+  await vi.waitFor(() => {
+    expect(panZoomInstances).toHaveLength(1);
+  });
+  expect(resizeObservers).toHaveLength(1);
+  expect(resizeObservers[0].observe).toHaveBeenCalledWith(
+    document.body.querySelector('.diagram__svg-host'),
+  );
+
+  resizeObservers[0].callback();
+
+  const instance = panZoomInstances[0];
+  expect(instance.resize).toHaveBeenCalledTimes(1);
+  expect(instance.fit).toHaveBeenCalledTimes(1);
+  expect(instance.center).toHaveBeenCalledTimes(1);
+});
+
+test('teardown disconnects the ResizeObserver and a late resize event is a no-op', async () => {
+  registerDiagramProvider(stubProvider());
+  const pre = makePre('graph TD; A-->B');
+  const handle = mountDiagram(pre, 'mermaid')!;
+  await vi.waitFor(() => {
+    expect(resizeObservers).toHaveLength(1);
+  });
+
+  handle.teardown();
+  expect(resizeObservers[0].disconnect).toHaveBeenCalledTimes(1);
+
+  // Even if the observer somehow still fired after teardown, the
+  // `destroyed` guard must prevent it from touching the dead instance.
+  resizeObservers[0].callback();
+  const instance = panZoomInstances[0];
+  expect(instance.resize).not.toHaveBeenCalled();
+  expect(instance.fit).not.toHaveBeenCalled();
+  expect(instance.center).not.toHaveBeenCalled();
 });
 
 test('teardownDiagramsIn finds and tears down every diagram under a root', async () => {
