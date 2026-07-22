@@ -32,3 +32,10 @@ export const synthesisSucceeded = (table: LookupTable): Action => ({
 });
 
 export const synthesisFailed = (error: string): Action => ({ type: 'SYNTHESIS_FAILED', error });
+
+export const diagramNodeSelected = (diagramId: string, nodeId: string, label: string): Action => ({
+  type: 'DIAGRAM_NODE_SELECTED',
+  diagramId,
+  nodeId,
+  label,
+});
