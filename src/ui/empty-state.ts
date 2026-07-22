@@ -18,6 +18,10 @@ export interface EmptyStateOptions {
   onClearRecent?: () => void;
   /** App version shown at the end of the footer (e.g. "0.3.0"); omitted → no version chip. */
   version?: string;
+  /** A known-available update; omitted → no banner. Clicking the banner's
+      button never installs directly — it opens the same update-dialog.ts
+      component main.ts already drives, so there's one install path. */
+  updateAvailable?: { version: string; onOpenDialog: () => void };
 }
 
 // Binoculars mark (Figma 111:3780 "Union"). Fill rides --sz-map-bar — the
@@ -105,6 +109,24 @@ function buildFooter(version?: string): HTMLElement {
   return footer;
 }
 
+function buildUpdateBanner(update: { version: string; onOpenDialog: () => void }): HTMLElement {
+  const banner = document.createElement('div');
+  banner.className = 'empty-state__update-banner';
+
+  const text = document.createElement('span');
+  text.textContent = `Version ${update.version} is available.`;
+  banner.appendChild(text);
+
+  const action = document.createElement('button');
+  action.type = 'button';
+  action.className = 'empty-state__update-banner-action';
+  action.textContent = 'Update';
+  action.addEventListener('click', () => update.onOpenDialog());
+  banner.appendChild(action);
+
+  return banner;
+}
+
 /** Mount the empty state into `root` (the viewport). Returns a teardown. */
 export function mountEmptyState(root: HTMLElement, opts: EmptyStateOptions): EmptyStateHandle {
   const container = document.createElement('div');
@@ -156,6 +178,9 @@ export function mountEmptyState(root: HTMLElement, opts: EmptyStateOptions): Emp
   }
 
   container.appendChild(body);
+  if (opts.updateAvailable) {
+    container.appendChild(buildUpdateBanner(opts.updateAvailable));
+  }
   container.appendChild(buildFooter(opts.version));
   root.appendChild(container);
 

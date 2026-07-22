@@ -182,3 +182,31 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.empty-state__update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px 16px;
+  margin: 0 auto;
+  border-radius: var(--sz-radius-pill);
+  background: var(--sz-key-bg);
+  border: 1px solid var(--sz-seg-border);
+  font-size: 12px;
+  color: var(--sz-ink);
+}
+
+.empty-state__update-banner-action {
+  padding: 4px 12px;
+  border-radius: var(--sz-radius-pill);
+  border: none;
+  background: var(--sz-accent);
+  color: #fff;
+  font: 600 11.5px/1 var(--sz-font);
+  cursor: pointer;
+}
+
+.empty-state__update-banner-action:hover {
+  opacity: 0.9;
+}
