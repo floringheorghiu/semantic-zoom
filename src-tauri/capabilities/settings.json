@@ -1,10 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "settings",
-  "description": "Capability for the Settings window (§8.3) — includes updater:default/process:allow-restart because the Updates tab hosts its own update-dialog instance for manual checks.",
+  "description": "Capability for the Settings window (§8.3) — includes updater:default/process:allow-restart/dialog:default because the Updates tab hosts its own update-dialog instance for manual checks and prompts to restart after install.",
   "windows": ["settings"],
   "permissions": [
     "core:default",
+    "dialog:default",
     "updater:default",
     "process:allow-restart"
   ]
