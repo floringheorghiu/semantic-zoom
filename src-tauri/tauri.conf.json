@@ -30,7 +30,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["dmg"],
+    "targets": ["dmg", "app"],
     "createUpdaterArtifacts": true,
     "resources": ["resources/help.md"],
     "macOS": {
