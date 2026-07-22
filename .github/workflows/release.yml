@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # Reuses the same script a human runs locally today (tauri build +
+      # finalize-dmg.sh's Finder icon-size polish) — the signing env vars
+      # make `tauri build` also emit the signed .app.tar.gz update artifact
+      # alongside the .dmg installer, with no extra flags needed.
+      - name: Build, sign, and finalize the DMG
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run build:dmg
+
+      - name: Create GitHub release (auto-generated notes from merged PRs)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" --title "${{ github.ref_name }}" --generate-notes
+
+      - name: Generate latest.json from the signed artifact + release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/generate-latest-json.mjs "${{ github.ref_name }}"
+
+      - name: Upload release artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          DMG="$(ls src-tauri/target/release/bundle/dmg/*.dmg)"
+          TARBALL="$(ls src-tauri/target/release/bundle/macos/*.app.tar.gz)"
+          SIG="$(ls src-tauri/target/release/bundle/macos/*.app.tar.gz.sig)"
+          gh release upload "${{ github.ref_name }}" "$DMG" "$TARBALL" "$SIG" latest.json --clobber

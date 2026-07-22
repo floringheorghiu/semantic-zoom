@@ -11,6 +11,7 @@
       <button role="tab" data-tab="general" aria-selected="true">General</button>
       <button role="tab" data-tab="inference" aria-selected="false">Inference</button>
       <button role="tab" data-tab="prompt" aria-selected="false">Prompt</button>
+      <button role="tab" data-tab="updates" aria-selected="false">Updates</button>
     </div>
     <section data-tab="general">
       <div class="field">
@@ -99,6 +100,32 @@
       </div>
       <div id="template-note">Only the writing style is editable — the output format is fixed.
       A style that breaks generation fails safely: the app retries, then falls back to the untagged document.</div>
+    </section>
+    <section data-tab="updates" hidden>
+      <div class="field">
+        <span class="field__label">Current version</span>
+        <p class="field__hint" id="updates-current-version">—</p>
+      </div>
+      <div class="row">
+        <button id="updates-check-now" type="button">Check for Updates now</button>
+      </div>
+      <div id="updates-status-line" role="status"></div>
+      <label class="checkbox-field">
+        <input type="checkbox" id="updates-auto-check" /> Automatically check for updates.
+      </label>
+      <label class="checkbox-field">
+        <input type="checkbox" id="updates-auto-install" /> Automatically download and install updates.
+      </label>
+      <p class="field__hint">The updates are downloaded in the background. The app will ask to restart to apply the update.</p>
+      <div class="field">
+        <span class="field__label">Changelog</span>
+        <div id="updates-changelog"></div>
+      </div>
+      <div id="updates-coffee">
+        <p>We're now accepting support via Buy Me a Coffee — your one-time or recurring contribution helps keep this project going. If you're able, we'd appreciate it.</p>
+        <a id="updates-coffee-link" href="https://buymeacoffee.com/fgheorghiu" target="_blank" rel="noreferrer">Buy Me a Coffee</a>
+      </div>
+      <div id="updates-dialog-mount"></div>
     </section>
   </body>
 </html>
