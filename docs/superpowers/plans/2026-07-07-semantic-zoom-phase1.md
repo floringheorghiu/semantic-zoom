@@ -102,7 +102,7 @@ Follows spec §1 exactly. One responsibility per file.
 
 - [ ] **Step 1: Scaffold the app** (spec §1 "Bootstrap commands")
 
-Run from `/Users/floringheorghiu/Coding/Active-code/`:
+Run from the parent directory containing this repo (e.g. `~/Coding/Active-code/`):
 ```bash
 npm create tauri-app@latest semantic-zoom -- --template vanilla-ts
 ```
@@ -111,7 +111,7 @@ The directory already exists with `docs/`, `fixtures/`, `CLAUDE.md`, `.git/`. If
 - [ ] **Step 2: Install frontend + Rust deps** (spec §1)
 
 ```bash
-cd /Users/floringheorghiu/Coding/Active-code/semantic-zoom
+cd semantic-zoom
 npm i rxjs unified remark-parse unist-util-visit
 cd src-tauri
 cargo add notify notify-debouncer-mini serde serde_json sha2 hex --features serde/derive
