@@ -110,6 +110,13 @@ export function initUpdatesTab(): void {
 
   function renderChangelog(releases: Awaited<ReturnType<typeof fetchReleasesSince>>): void {
     changelogEl.replaceChildren();
+    if (releases.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'updates-changelog__empty';
+      empty.textContent = "You're on the latest version — no newer release notes to show.";
+      changelogEl.appendChild(empty);
+      return;
+    }
     for (const release of releases) {
       const entry = document.createElement('div');
       entry.className = 'updates-changelog__entry';
