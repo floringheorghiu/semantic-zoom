@@ -86,6 +86,7 @@ export function mountDiagram(pre: HTMLElement, lang: string): DiagramMountHandle
   container.appendChild(toggle);
 
   let panZoomInstance: SvgPanZoom.Instance | null = null;
+  let resizeObserver: ResizeObserver | null = null;
   let destroyed = false;
 
   function showError(message: string): void {
@@ -125,6 +126,23 @@ export function mountDiagram(pre: HTMLElement, lang: string): DiagramMountHandle
             fit: true,
             center: true,
           });
+          // `.diagram__svg-host` carries `resize: vertical` (diagrams.css)
+          // so the user can drag it taller for a bigger diagram — but
+          // svg-pan-zoom only measures the container once, at the line
+          // above. Without this, dragging the handle would leave the
+          // diagram mis-scaled inside its new box instead of re-fitting.
+          // Guarded: ResizeObserver isn't available in the jsdom test
+          // environment, and ITS OWN callback firing after teardown (a
+          // resize mid-flight) must not touch a destroyed instance.
+          if (typeof ResizeObserver !== 'undefined') {
+            resizeObserver = new ResizeObserver(() => {
+              if (destroyed || !panZoomInstance) return;
+              panZoomInstance.resize();
+              panZoomInstance.fit();
+              panZoomInstance.center();
+            });
+            resizeObserver.observe(svgHost);
+          }
           wireGraphClicks(provider.extractGraph(source), svgEl);
         }
       })
@@ -137,6 +155,8 @@ export function mountDiagram(pre: HTMLElement, lang: string): DiagramMountHandle
   const handle: DiagramMountHandle = {
     teardown: () => {
       destroyed = true;
+      resizeObserver?.disconnect();
+      resizeObserver = null;
       panZoomInstance?.destroy();
       panZoomInstance = null;
     },

@@ -6,7 +6,16 @@
 
 .diagram__svg-host {
   width: 100%;
-  min-height: 120px;
+  /* A real, fixed height (not min-height) — svg-pan-zoom measures this
+     container's actual box at init to compute its fit/pan/zoom scale, so a
+     collapsed-height container locks the whole diagram into a cramped,
+     clipped viewport with no usable room to pan or zoom into. 480px is a
+     generous default for a pan/zoomable viewport, not a "fit the content"
+     box — `resize: vertical` lets the user grow it further for a larger
+     diagram, same idea as a native <textarea>. */
+  height: 480px;
+  min-height: 240px;
+  resize: vertical;
   border: 1px solid var(--sz-border);
   border-radius: var(--sz-radius-card);
   overflow: hidden;
@@ -15,7 +24,7 @@
 .diagram__svg-host svg {
   display: block;
   width: 100%;
-  height: auto;
+  height: 100%;
 }
 
 .diagram__error {

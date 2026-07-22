@@ -78,9 +78,24 @@ async function render(source: string, options: RenderOptions): Promise<string> {
   // securityLevel 'strict' disables Mermaid's own click-directive JS
   // execution — the first of two independent sanitization layers (the
   // second is sanitizeSvg below). See sanitize-svg.ts's module doc.
+  //
+  // htmlLabels: false (both the top-level and flowchart-scoped settings —
+  // Mermaid checks both depending on diagram/label type) is NOT a visual
+  // preference: Mermaid's default label rendering puts ALL label text
+  // inside <foreignObject><div>...</div></foreignObject> (confirmed by
+  // direct render: a 2-node flowchart produces 0 <text> elements and 3
+  // foreignObject blocks). sanitize-svg.ts strips <foreignObject> as an XSS
+  // defense (it's a known SVG mXSS vector), which — without this setting —
+  // silently deletes every flowchart's visible label text along with it.
+  // Forcing plain SVG <text> labels here means sanitization no longer has
+  // to choose between "safe" and "has visible text" for the common case.
+  // See mermaid-provider.integration.test.ts, which renders real (unmocked)
+  // Mermaid output through the real sanitizer to catch a regression here.
   mermaid.initialize({
     startOnLoad: false,
     securityLevel: 'strict',
+    htmlLabels: false,
+    flowchart: { htmlLabels: false },
     theme: options.theme === 'dark' ? 'dark' : 'default',
   });
 
