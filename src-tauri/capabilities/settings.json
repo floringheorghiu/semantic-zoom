@@ -1,12 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "settings",
-  "description": "Capability for the Settings window (§8.3) — includes updater:default/process:allow-restart/dialog:default because the Updates tab hosts its own update-dialog instance for manual checks and prompts to restart after install.",
+  "description": "Capability for the Settings window (§8.3) — includes updater:default/process:allow-restart/dialog:default because the Updates tab hosts its own update-dialog instance for manual checks and prompts to restart after install; opener:default lets the Buy Me a Coffee link (target=\"_blank\") hand off to the system browser instead of being blocked in-webview.",
   "windows": ["settings"],
   "permissions": [
     "core:default",
     "dialog:default",
     "updater:default",
-    "process:allow-restart"
+    "process:allow-restart",
+    "opener:default"
   ]
 }
