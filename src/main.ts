@@ -163,6 +163,7 @@ let contentMapTeardown: (() => void) | null = null;
 let emptyStateTeardown: (() => void) | null = null;
 let updateDialog: UpdateDialogHandle | null = null;
 let lastKnownUpdate: Update | null = null;
+let lastKnownAutoInstall = true;
 let themeSwitcher: ThemeSwitcherHandle | null = null;
 
 let viewportEl: HTMLElement;
@@ -1108,7 +1109,7 @@ function showEmptyState(): void {
     },
     version: __APP_VERSION__,
     updateAvailable: lastKnownUpdate
-      ? { version: lastKnownUpdate.version, onOpenDialog: () => void presentFoundUpdate(lastKnownUpdate!, false) }
+      ? { version: lastKnownUpdate.version, onOpenDialog: () => void presentFoundUpdate(lastKnownUpdate!, lastKnownAutoInstall) }
       : undefined,
   }).teardown;
   docFilenameEl.textContent = APP_NAME;
@@ -1138,10 +1139,8 @@ function hideEmptyState(): void {
 
 /**
  * The shared "found an update" flow: fetches the stacked release notes and
- * opens the dialog. `manual` is true only for the settings-tab-triggered
- * (via the `update://check-requested` event) path — kept here in case a
- * future refinement needs to vary found-dialog copy by trigger source;
- * currently both paths render identically.
+ * opens the found-update dialog, seeding its auto-install checkbox from
+ * `autoInstall` (the caller's best-known value of the saved preference).
  */
 async function presentFoundUpdate(update: Update, autoInstall: boolean): Promise<void> {
   const currentVersion = __APP_VERSION__;
@@ -1198,6 +1197,9 @@ async function runUpdateCheck(manual: boolean): Promise<void> {
   const prefs = await invoke<{ autoCheck: boolean; autoInstall: boolean; skippedVersion: string | null }>(
     'get_update_prefs',
   );
+  lastKnownAutoInstall = prefs.autoInstall;
+  if (!manual && !prefs.autoCheck) return;
+
   const update = await checkForUpdate();
   lastKnownUpdate = update;
   if (!update) return;
@@ -1209,7 +1211,11 @@ async function runUpdateCheck(manual: boolean): Promise<void> {
   }
 
   await presentFoundUpdate(update, prefs.autoInstall);
-  showEmptyState(); // refresh the banner too, in case the dialog gets Remind-Me-Later'd
+  // Refresh the banner too, in case the dialog gets Remind-Me-Later'd — but
+  // only when the empty state is what's actually showing (no document
+  // open). Never remount it over an open document (a manual check can run
+  // any time from the settings window).
+  if (currentPath === null) showEmptyState();
 }
 
 /**
