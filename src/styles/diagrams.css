@@ -1,0 +1,52 @@
+/* src/styles/diagrams.css */
+.diagram {
+  position: relative;
+  margin: 0.5em 0;
+}
+
+.diagram__svg-host {
+  width: 100%;
+  /* `aspect-ratio` (not a fixed height) — diagram-component.ts sets this
+     inline from the rendered SVG's own viewBox right before svg-pan-zoom
+     measures the container, so `fit`+`center` has no ratio mismatch left
+     to letterbox into: the box IS the diagram's shape, just scaled to the
+     column width. The 16/9 here is only the fallback before that inline
+     value lands (or for an SVG with no parseable viewBox). min/max-height
+     keep an extreme ratio (very tall/narrow, or very wide/short) from
+     taking over the page; `resize: vertical` still lets the user override
+     by hand, same idea as a native <textarea>. */
+  aspect-ratio: 16 / 9;
+  min-height: 240px;
+  max-height: 640px;
+  resize: vertical;
+  border: 1px solid var(--sz-border);
+  border-radius: var(--sz-radius-card);
+  overflow: hidden;
+}
+
+.diagram__svg-host svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.diagram__error {
+  color: var(--sz-warn-text);
+  background: color-mix(in srgb, var(--sz-warn) 12%, transparent);
+  border: 1px solid var(--sz-warn);
+  border-radius: var(--sz-radius-card);
+  padding: 6px 10px;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.diagram__source-toggle {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--sz-muted);
+  background: none;
+  border: 1px solid var(--sz-border);
+  border-radius: var(--sz-radius-pill);
+  padding: 2px 10px;
+  cursor: pointer;
+}
