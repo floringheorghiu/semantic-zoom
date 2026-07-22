@@ -7,6 +7,7 @@ import { initTabs } from './settings/tabs';
 import { initInferenceTab } from './settings/inference-tab';
 import { initGeneralTab } from './settings/general-tab';
 import { initPromptTab } from './settings/prompt-tab';
+import { initUpdatesTab } from './settings/updates-tab';
 
 // Shares the main window's token system (accent/theme palette) instead of a
 // parallel one, so a choice made here looks identical everywhere else. Pure
@@ -14,6 +15,7 @@ import { initPromptTab } from './settings/prompt-tab';
 // isolation is a JS-secrets concern, not a styling one).
 import '../styles/tokens.css';
 import '../styles/settings.css';
+import '../styles/update-dialog.css';
 
 // `settings.html` loads this script as `type="module" defer`, so the DOM
 // (including the static `#theme-group` markup) is already fully parsed
@@ -29,3 +31,4 @@ initAnchorVisibility();
 initTabs(document.body);
 initInferenceTab();
 void initPromptTab();
+initUpdatesTab();

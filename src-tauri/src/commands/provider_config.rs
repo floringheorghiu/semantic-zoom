@@ -134,12 +134,45 @@ impl Default for ProviderConfig {
     }
 }
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CustomTemplate {
     pub id: String,
     pub name: String,
     pub text: String,
+}
+
+/// Non-secret update preferences. `skipped_version` is written by the
+/// update-found dialog's "Skip This Version" action; only the automatic
+/// (main-window, startup) check path reads it — a manual "Check for
+/// Updates now" always shows the dialog regardless.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdatePrefs {
+    #[serde(default = "default_true")]
+    pub auto_check: bool,
+    #[serde(default = "default_true")]
+    pub auto_install: bool,
+    #[serde(default)]
+    pub skipped_version: Option<String>,
+}
+
+impl Default for UpdatePrefs {
+    fn default() -> Self {
+        UpdatePrefs {
+            auto_check: true,
+            auto_install: true,
+            skipped_version: None,
+        }
+    }
+}
+
+fn is_default_update_prefs(p: &UpdatePrefs) -> bool {
+    *p == UpdatePrefs::default()
 }
 
 /// Non-secret, non-interpreted prompt-template selection state (Task 8's TS
@@ -183,6 +216,8 @@ struct ConfigStore {
     saved_providers: HashMap<Provider, ProviderConfig>,
     #[serde(default, skip_serializing_if = "is_default_templates")]
     prompt_templates: PromptTemplates,
+    #[serde(default, skip_serializing_if = "is_default_update_prefs")]
+    update_prefs: UpdatePrefs,
 }
 
 impl Default for ConfigStore {
@@ -192,6 +227,7 @@ impl Default for ConfigStore {
             saved: HashMap::new(),
             saved_providers: HashMap::new(),
             prompt_templates: PromptTemplates::default(),
+            update_prefs: UpdatePrefs::default(),
         }
     }
 }
@@ -308,6 +344,25 @@ pub fn set_prompt_templates(
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let mut store = read_store(&dir);
     store.prompt_templates = templates;
+    let path = dir.join(CONFIG_FILE);
+    let json = serde_json::to_string_pretty(&store).map_err(|e| e.to_string())?;
+    fs::write(path, json).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_update_prefs(app: tauri::AppHandle) -> Result<UpdatePrefs, String> {
+    use tauri::Manager;
+    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    Ok(read_store(&dir).update_prefs)
+}
+
+#[tauri::command]
+pub fn set_update_prefs(app: tauri::AppHandle, prefs: UpdatePrefs) -> Result<(), String> {
+    use tauri::Manager;
+    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let mut store = read_store(&dir);
+    store.update_prefs = prefs;
     let path = dir.join(CONFIG_FILE);
     let json = serde_json::to_string_pretty(&store).map_err(|e| e.to_string())?;
     fs::write(path, json).map_err(|e| e.to_string())
@@ -535,6 +590,73 @@ mod tests {
         assert_eq!(store.active.base_url, "https://api.cerebras.ai/v1");
         assert_eq!(store.active.provider, Provider::Cerebras);
         assert_eq!(store.prompt_templates, PromptTemplates::default());
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn update_prefs_default_when_never_written() {
+        let dir = std::env::temp_dir().join(format!(
+            "szoom-provider-config-test-{}-{}",
+            std::process::id(),
+            "update-prefs-default"
+        ));
+        let _ = fs::remove_dir_all(&dir);
+
+        let store = read_store(&dir);
+        assert_eq!(store.update_prefs, UpdatePrefs::default());
+        assert!(store.update_prefs.auto_check);
+        assert!(store.update_prefs.auto_install);
+        assert_eq!(store.update_prefs.skipped_version, None);
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn update_prefs_round_trip() {
+        let dir = std::env::temp_dir().join(format!(
+            "szoom-provider-config-test-{}-{}",
+            std::process::id(),
+            "update-prefs-roundtrip"
+        ));
+        let _ = fs::remove_dir_all(&dir);
+
+        let prefs = UpdatePrefs {
+            auto_check: false,
+            auto_install: true,
+            skipped_version: Some("0.9.0".to_string()),
+        };
+        let mut store = read_store(&dir);
+        store.update_prefs = prefs.clone();
+        fs::create_dir_all(&dir).unwrap();
+        let json = serde_json::to_string_pretty(&store).unwrap();
+        fs::write(dir.join(CONFIG_FILE), json).unwrap();
+
+        let reread = read_store(&dir);
+        assert_eq!(reread.update_prefs, prefs);
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn pre_update_prefs_config_file_reads_clean() {
+        let dir = std::env::temp_dir().join(format!(
+            "szoom-provider-config-test-{}-{}",
+            std::process::id(),
+            "pre-update-prefs"
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        // A file written before `update_prefs` existed: no `updatePrefs` key.
+        fs::write(
+            dir.join(CONFIG_FILE),
+            r#"{"kind":"remote","base_url":"https://api.cerebras.ai/v1","model":"llama3.1-8b"}"#,
+        )
+        .unwrap();
+
+        let store = read_store(&dir);
+        assert_eq!(store.update_prefs, UpdatePrefs::default());
 
         fs::remove_dir_all(&dir).ok();
     }

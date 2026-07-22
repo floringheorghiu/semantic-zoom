@@ -4,6 +4,8 @@
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { ask, open } from '@tauri-apps/plugin-dialog';
+import { check as checkForUpdate, type Update } from '@tauri-apps/plugin-updater';
+import { relaunch } from '@tauri-apps/plugin-process';
 import { Menu, Submenu, MenuItem, PredefinedMenuItem } from '@tauri-apps/api/menu';
 
 import { buildIndex, type ZoomLevel, type LookupTable, type ResolvedIndex } from './engine/schema';
@@ -25,6 +27,8 @@ import { nextScale, SCALE_DEFAULT } from './ui/content-scale';
 import { markActiveGroup, clearActiveGroups, sectionAtTop } from './ui/active-group';
 import { mountStatusBadge, type StatusBadgeHandle } from './ui/status-badge';
 import { mountEmptyState } from './ui/empty-state';
+import { mountUpdateDialog, type UpdateDialogHandle } from './ui/update-dialog';
+import { fetchReleasesSince } from './native/github-releases';
 import { mountThemeSwitcher, type ThemeSwitcherHandle } from './ui/theme-switcher';
 import { getRecentFiles, addRecentFile, clearRecentFiles } from './state/recent-files';
 import { initTheme, getThemePref, setThemePref } from './state/theme';
@@ -66,6 +70,7 @@ import './styles/focus-mask.css';
 import './styles/reading.css';
 import './styles/content-map.css';
 import './styles/empty-state.css';
+import './styles/update-dialog.css';
 import './styles/theme-switcher.css';
 import './styles/generate-picker.css';
 import './styles/generation-tooltip.css';
@@ -156,6 +161,9 @@ let generatePicker: GeneratePickerHandle | null = null;
 let contentMapTeardown: (() => void) | null = null;
 /** The pre-open placeholder (Figma 77:2622); torn down on the first openFile. */
 let emptyStateTeardown: (() => void) | null = null;
+let updateDialog: UpdateDialogHandle | null = null;
+let lastKnownUpdate: Update | null = null;
+let lastKnownAutoInstall = true;
 let themeSwitcher: ThemeSwitcherHandle | null = null;
 
 let viewportEl: HTMLElement;
@@ -1100,6 +1108,9 @@ function showEmptyState(): void {
       showEmptyState();
     },
     version: __APP_VERSION__,
+    updateAvailable: lastKnownUpdate
+      ? { version: lastKnownUpdate.version, onOpenDialog: () => void presentFoundUpdate(lastKnownUpdate!, lastKnownAutoInstall) }
+      : undefined,
   }).teardown;
   docFilenameEl.textContent = APP_NAME;
   zoomFooterEl.hidden = true;
@@ -1124,6 +1135,121 @@ function hideEmptyState(): void {
   zoomFooterEl.hidden = false;
   themeSwitcher?.teardown();
   themeSwitcher = null;
+}
+
+/**
+ * The shared "found an update" flow: fetches the stacked release notes and
+ * opens the found-update dialog, seeding its auto-install checkbox from
+ * `autoInstall` (the caller's best-known value of the saved preference).
+ */
+async function presentFoundUpdate(update: Update, autoInstall: boolean): Promise<void> {
+  const currentVersion = __APP_VERSION__;
+  const releaseNotes = await fetchReleasesSince(currentVersion);
+  updateDialog?.showFound({
+    currentVersion,
+    latestVersion: update.version,
+    releaseNotes: releaseNotes.length > 0 ? releaseNotes : [{ version: update.version, notesMarkdown: update.body ?? '' }],
+    autoInstall,
+    onAutoInstallChange: (value) => {
+      void invoke('set_update_prefs', {
+        prefs: { autoCheck: true, autoInstall: value, skippedVersion: null },
+      });
+    },
+    onSkip: () => {
+      void invoke('get_update_prefs').then((prefs) =>
+        invoke('set_update_prefs', { prefs: { ...(prefs as object), skippedVersion: update.version } }),
+      );
+    },
+    onRemindLater: () => {},
+    onInstall: () => void installUpdate(update),
+  });
+}
+
+async function installUpdate(update: Update): Promise<void> {
+  let downloaded = 0;
+  let total = 0;
+  let cancelled = false;
+  updateDialog?.showProgress({
+    downloadedBytes: 0,
+    totalBytes: 0,
+    onCancel: () => {
+      cancelled = true;
+    },
+  });
+  try {
+    await update.downloadAndInstall((event) => {
+      if (event.event === 'Started') {
+        total = event.data.contentLength ?? 0;
+      } else if (event.event === 'Progress') {
+        downloaded += event.data.chunkLength;
+        updateDialog?.updateProgress(downloaded, total);
+      }
+    });
+  } catch (error) {
+    console.error('installUpdate: downloadAndInstall failed', error);
+    updateDialog?.close();
+    return;
+  }
+  if (cancelled) return;
+  updateDialog?.close();
+  const shouldRestart = await ask('Restart Semantic Zoom now to finish updating?', {
+    title: 'Update Installed',
+  });
+  if (shouldRestart) await relaunch();
+}
+
+/**
+ * Runs on startup (gated by auto_check) and whenever the settings window's
+ * "Check for Updates now" fires `update://check-requested`. The two callers
+ * want genuinely different behavior, not just a skippedVersion toggle:
+ *
+ *  - `manual: false` (automatic startup path): the real check. Honors
+ *    skippedVersion, auto-installs silently (straight to the progress view)
+ *    when `autoInstall` is on, otherwise shows the found-update dialog.
+ *
+ *  - `manual: true` (cross-window nudge from `update://check-requested`):
+ *    the Settings window's own Updates tab already ran its own check and is
+ *    showing its own dialog instance for it — this signal only exists so
+ *    `main.ts`'s tracked state (and, if the empty state is showing, its
+ *    banner) stays in sync. It must NEVER pop `presentFoundUpdate`'s modal
+ *    here too — that would be a confusing second dialog, possibly stacked
+ *    over an open document.
+ */
+async function runUpdateCheck(manual: boolean): Promise<void> {
+  const prefs = await invoke<{ autoCheck: boolean; autoInstall: boolean; skippedVersion: string | null }>(
+    'get_update_prefs',
+  );
+  lastKnownAutoInstall = prefs.autoInstall;
+  if (!manual && !prefs.autoCheck) return;
+
+  let update: Update | null;
+  try {
+    update = await checkForUpdate();
+  } catch (error) {
+    console.error('runUpdateCheck: checkForUpdate failed', error);
+    return;
+  }
+  lastKnownUpdate = update;
+  if (!update) return;
+
+  if (manual) {
+    // Cross-window resync only — never present the dialog for this path.
+    if (currentPath === null) showEmptyState();
+    return;
+  }
+
+  if (update.version === prefs.skippedVersion) return;
+
+  if (prefs.autoInstall) {
+    void installUpdate(update);
+    return;
+  }
+
+  await presentFoundUpdate(update, prefs.autoInstall);
+  // Refresh the banner too, in case the dialog gets Remind-Me-Later'd — but
+  // only when the empty state is what's actually showing (no document
+  // open). Never remount it over an open document.
+  if (currentPath === null) showEmptyState();
 }
 
 /**
@@ -1555,8 +1681,12 @@ window.addEventListener('DOMContentLoaded', () => {
   // scrollCommands$ (see scrollItemToTop).
   mountContentMapOnce();
 
+  updateDialog = mountUpdateDialog(document.body);
+
   // No document is open yet — show the placeholder until the first openFile.
   showEmptyState();
+
+  void runUpdateCheck(false);
 
   window.addEventListener('beforeunload', () => {
     zoomTeardown?.();
@@ -1589,6 +1719,10 @@ window.addEventListener('DOMContentLoaded', () => {
   // The watcher fires this on disk change → silent hot-reload (spec §5.3).
   void listen('doc://changed', () => {
     void handleDocChanged();
+  });
+
+  void listen('update://check-requested', () => {
+    void runUpdateCheck(true);
   });
 });
 

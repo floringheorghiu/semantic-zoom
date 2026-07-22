@@ -14,6 +14,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(state::AppState::default())
         .manage(crate::watcher::debounced::WatcherState::default())
         .manage(commands::llm_client::LlmCancelState::default())
@@ -29,7 +31,10 @@ pub fn run() {
             commands::provider_config::get_saved_provider_profile,
             commands::provider_config::get_prompt_templates,
             commands::provider_config::set_prompt_templates,
+            commands::provider_config::get_update_prefs,
+            commands::provider_config::set_update_prefs,
             commands::window::open_settings_window,
+            commands::window::request_update_check,
             commands::remove_payload::remove_payload,
             commands::help::install_help_file,
             commands::generation_history::get_generation_history,

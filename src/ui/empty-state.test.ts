@@ -124,3 +124,27 @@ test('omits "Clear history" when no handler is provided', () => {
   });
   expect(root.querySelector('.empty-state__recent-clear')).toBeNull();
 });
+
+test('renders an update banner when updateAvailable is given', () => {
+  const root = document.createElement('div');
+  const onOpenDialog = vi.fn();
+  mountEmptyState(root, {
+    recentFiles: [],
+    ...noopHandlers,
+    version: '0.8.0',
+    updateAvailable: { version: '0.9.0', onOpenDialog },
+  });
+
+  const banner = root.querySelector('.empty-state__update-banner');
+  expect(banner).not.toBeNull();
+  expect(banner?.textContent).toContain('0.9.0');
+
+  root.querySelector<HTMLButtonElement>('.empty-state__update-banner-action')!.click();
+  expect(onOpenDialog).toHaveBeenCalledOnce();
+});
+
+test('omits the update banner when no update is available', () => {
+  const root = document.createElement('div');
+  mountEmptyState(root, { recentFiles: [], ...noopHandlers, version: '0.8.0' });
+  expect(root.querySelector('.empty-state__update-banner')).toBeNull();
+});
