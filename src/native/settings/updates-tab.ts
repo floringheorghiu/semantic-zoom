@@ -55,15 +55,30 @@ export function initUpdatesTab(): void {
     if (!update) return;
     let downloaded = 0;
     let total = 0;
-    dialog.showProgress({ downloadedBytes: 0, totalBytes: 0, onCancel: () => {} });
-    await update.downloadAndInstall((event) => {
-      if (event.event === 'Started') {
-        total = event.data.contentLength ?? 0;
-      } else if (event.event === 'Progress') {
-        downloaded += event.data.chunkLength;
-        dialog.updateProgress(downloaded, total);
-      }
+    let cancelled = false;
+    dialog.showProgress({
+      downloadedBytes: 0,
+      totalBytes: 0,
+      onCancel: () => {
+        cancelled = true;
+      },
     });
+    try {
+      await update.downloadAndInstall((event) => {
+        if (event.event === 'Started') {
+          total = event.data.contentLength ?? 0;
+        } else if (event.event === 'Progress') {
+          downloaded += event.data.chunkLength;
+          dialog.updateProgress(downloaded, total);
+        }
+      });
+    } catch (error) {
+      console.error('runInstall: downloadAndInstall failed', error);
+      dialog.close();
+      statusLine.textContent = "Couldn't install the update — try again later.";
+      return;
+    }
+    if (cancelled) return;
     dialog.close();
     const shouldRestart = await ask('Restart Semantic Zoom now to finish updating?', {
       title: 'Update Installed',
@@ -73,35 +88,40 @@ export function initUpdatesTab(): void {
 
   async function handleCheckNow(): Promise<void> {
     statusLine.textContent = 'Checking…';
-    const update = await checkForUpdate();
-    // Keep the main window's empty-state banner in sync with this manual
-    // check, whether or not an update was found.
-    void invoke('request_update_check');
+    try {
+      const update = await checkForUpdate();
+      // Keep the main window's empty-state banner in sync with this manual
+      // check, whether or not an update was found.
+      void invoke('request_update_check');
 
-    if (!update) {
-      statusLine.textContent = "You're up to date.";
-      return;
+      if (!update) {
+        statusLine.textContent = "You're up to date.";
+        return;
+      }
+      statusLine.textContent = '';
+
+      const releaseNotes = await fetchReleasesSince(appVersion);
+      dialog.showFound({
+        currentVersion: appVersion,
+        latestVersion: update.version,
+        releaseNotes: releaseNotes.length > 0 ? releaseNotes : [{ version: update.version, notesMarkdown: update.body ?? '' }],
+        autoInstall: prefs.autoInstall,
+        onAutoInstallChange: (value) => {
+          prefs = { ...prefs, autoInstall: value };
+          autoInstallBox.checked = value;
+          void savePrefs();
+        },
+        onSkip: () => {
+          prefs = { ...prefs, skippedVersion: update.version };
+          void savePrefs();
+        },
+        onRemindLater: () => {},
+        onInstall: () => void runInstall(update),
+      });
+    } catch (error) {
+      console.error('handleCheckNow: check failed', error);
+      statusLine.textContent = "Couldn't check for updates — try again later.";
     }
-    statusLine.textContent = '';
-
-    const releaseNotes = await fetchReleasesSince(appVersion);
-    dialog.showFound({
-      currentVersion: appVersion,
-      latestVersion: update.version,
-      releaseNotes: releaseNotes.length > 0 ? releaseNotes : [{ version: update.version, notesMarkdown: update.body ?? '' }],
-      autoInstall: prefs.autoInstall,
-      onAutoInstallChange: (value) => {
-        prefs = { ...prefs, autoInstall: value };
-        autoInstallBox.checked = value;
-        void savePrefs();
-      },
-      onSkip: () => {
-        prefs = { ...prefs, skippedVersion: update.version };
-        void savePrefs();
-      },
-      onRemindLater: () => {},
-      onInstall: () => void runInstall(update),
-    });
   }
 
   checkNowButton.addEventListener('click', () => {

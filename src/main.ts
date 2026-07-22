@@ -1168,15 +1168,29 @@ async function presentFoundUpdate(update: Update, autoInstall: boolean): Promise
 async function installUpdate(update: Update): Promise<void> {
   let downloaded = 0;
   let total = 0;
-  updateDialog?.showProgress({ downloadedBytes: 0, totalBytes: 0, onCancel: () => {} });
-  await update.downloadAndInstall((event) => {
-    if (event.event === 'Started') {
-      total = event.data.contentLength ?? 0;
-    } else if (event.event === 'Progress') {
-      downloaded += event.data.chunkLength;
-      updateDialog?.updateProgress(downloaded, total);
-    }
+  let cancelled = false;
+  updateDialog?.showProgress({
+    downloadedBytes: 0,
+    totalBytes: 0,
+    onCancel: () => {
+      cancelled = true;
+    },
   });
+  try {
+    await update.downloadAndInstall((event) => {
+      if (event.event === 'Started') {
+        total = event.data.contentLength ?? 0;
+      } else if (event.event === 'Progress') {
+        downloaded += event.data.chunkLength;
+        updateDialog?.updateProgress(downloaded, total);
+      }
+    });
+  } catch (error) {
+    console.error('installUpdate: downloadAndInstall failed', error);
+    updateDialog?.close();
+    return;
+  }
+  if (cancelled) return;
   updateDialog?.close();
   const shouldRestart = await ask('Restart Semantic Zoom now to finish updating?', {
     title: 'Update Installed',
@@ -1186,12 +1200,20 @@ async function installUpdate(update: Update): Promise<void> {
 
 /**
  * Runs on startup (gated by auto_check) and whenever the settings window's
- * "Check for Updates now" fires `update://check-requested`. `manual: true`
- * ignores skippedVersion (ask-me-explicitly always wins); the automatic
- * startup path honors it. When auto-install is on AND this is the
- * unattended startup path, install proceeds straight to the progress view
- * without showing the found-dialog first — the toggle's promise is "only
- * ever interrupting the user to ask for a restart."
+ * "Check for Updates now" fires `update://check-requested`. The two callers
+ * want genuinely different behavior, not just a skippedVersion toggle:
+ *
+ *  - `manual: false` (automatic startup path): the real check. Honors
+ *    skippedVersion, auto-installs silently (straight to the progress view)
+ *    when `autoInstall` is on, otherwise shows the found-update dialog.
+ *
+ *  - `manual: true` (cross-window nudge from `update://check-requested`):
+ *    the Settings window's own Updates tab already ran its own check and is
+ *    showing its own dialog instance for it — this signal only exists so
+ *    `main.ts`'s tracked state (and, if the empty state is showing, its
+ *    banner) stays in sync. It must NEVER pop `presentFoundUpdate`'s modal
+ *    here too — that would be a confusing second dialog, possibly stacked
+ *    over an open document.
  */
 async function runUpdateCheck(manual: boolean): Promise<void> {
   const prefs = await invoke<{ autoCheck: boolean; autoInstall: boolean; skippedVersion: string | null }>(
@@ -1200,12 +1222,25 @@ async function runUpdateCheck(manual: boolean): Promise<void> {
   lastKnownAutoInstall = prefs.autoInstall;
   if (!manual && !prefs.autoCheck) return;
 
-  const update = await checkForUpdate();
+  let update: Update | null;
+  try {
+    update = await checkForUpdate();
+  } catch (error) {
+    console.error('runUpdateCheck: checkForUpdate failed', error);
+    return;
+  }
   lastKnownUpdate = update;
   if (!update) return;
-  if (!manual && update.version === prefs.skippedVersion) return;
 
-  if (!manual && prefs.autoInstall) {
+  if (manual) {
+    // Cross-window resync only — never present the dialog for this path.
+    if (currentPath === null) showEmptyState();
+    return;
+  }
+
+  if (update.version === prefs.skippedVersion) return;
+
+  if (prefs.autoInstall) {
     void installUpdate(update);
     return;
   }
@@ -1213,8 +1248,7 @@ async function runUpdateCheck(manual: boolean): Promise<void> {
   await presentFoundUpdate(update, prefs.autoInstall);
   // Refresh the banner too, in case the dialog gets Remind-Me-Later'd — but
   // only when the empty state is what's actually showing (no document
-  // open). Never remount it over an open document (a manual check can run
-  // any time from the settings window).
+  // open). Never remount it over an open document.
   if (currentPath === null) showEmptyState();
 }
 
