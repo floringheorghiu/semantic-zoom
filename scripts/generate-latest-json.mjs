@@ -5,7 +5,7 @@
 // AFTER `gh release create` has published the release (so its notes exist)
 // and AFTER `npm run build:dmg` has produced the signed .app.tar.gz.
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 
 const tag = process.argv[2];
 if (!tag) {
@@ -24,8 +24,11 @@ if (!tarballName || !sigName) {
 }
 const signature = readFileSync(`${macosDir}/${sigName}`, 'utf8').trim();
 
-const notes = execSync(`gh release view "${tag}" --json body -q .body`, { encoding: 'utf8' });
-const arch = execSync('uname -m', { encoding: 'utf8' }).trim() === 'arm64' ? 'aarch64' : 'x86_64';
+const notes = execFileSync('gh', ['release', 'view', tag, '--json', 'body', '-q', '.body'], {
+  encoding: 'utf8',
+});
+const arch =
+  execFileSync('uname', ['-m'], { encoding: 'utf8' }).trim() === 'arm64' ? 'aarch64' : 'x86_64';
 const platformKey = `darwin-${arch}`;
 
 const manifest = {
