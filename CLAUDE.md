@@ -17,6 +17,7 @@ You are the lead implementer of the Semantic Zoom macOS app (Tauri v2, Rust + va
 ## Worktree hygiene
 
 - Every worktree maps to one discrete task; name it for that task (e.g. `phase1-plan`, `zoom-payload-prompt`), never generically.
+- **Before creating a new worktree, run `git fetch origin main` in the current checkout first.** A worktree branches from the local repo's cached knowledge of `origin/main`, not a live fetch — if that cache is stale (e.g. right after merging a PR in the same session, before anything re-fetched), the new worktree silently branches from old code and loses whatever just landed. This isn't hypothetical: it happened on 2026-08-13 — a worktree branched 10 minutes after PR #43 merged still missed it, because nothing had fetched `origin/main` in between. It only surfaced because branch protection's `strict` required-status-check caught the PR being out of date before merge. After creating the worktree, confirm it: `git merge-base --is-ancestor origin/main HEAD` should print nothing and exit 0 — if it doesn't, the new worktree is behind and needs `git fetch` + `git reset --hard origin/<default-branch>` before any work starts on it.
 - At the start of any session that touches worktrees, and before creating a new one, check whether any existing worktree's branch is already fully merged into `main`:
   ```
   git worktree list
